@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ourT — 演員監看</title>
+<style>
+  :root {
+    --bg: #000;
+    --panel: #0d0d0d;
+    --border: #1a1a1a;
+    --text: #e8e8e8;
+    --muted: #444;
+    --accent: #e0d0ff;
+    --accent2: #ffd0e0;
+    --ok: #44ffaa;
+    --warn: #ffcc44;
+    --danger: #ff6080;
+    --mic-on: #44ffaa;
+    --ai-think: #ffcc44;
+    --ai-speak: #e0d0ff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: 'Courier New', monospace;
+    user-select: none;
+  }
+
+  /* ── Layout ── */
+  .page {
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    height: 100vh;
+    gap: 0;
+  }
+
+  /* ── Top strip: MIC + TURN ── */
+  #top-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    min-height: 72px;
+  }
+
+  #mic-status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  #mic-dot {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+  }
+
+  #mic-dot.live {
+    background: var(--mic-on);
+    box-shadow: 0 0 12px var(--mic-on);
+    animation: mic-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 8px var(--mic-on); }
+    50%       { box-shadow: 0 0 24px var(--mic-on); }
+  }
+
+  #mic-label {
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    transition: color 0.2s;
+  }
+
+  #mic-label.live { color: var(--mic-on); }
+
+  #turn-indicator {
+    font-size: clamp(18px, 3vw, 32px);
+    letter-spacing: 2px;
+    font-weight: bold;
+    color: var(--muted);
+    text-align: right;
+    transition: color 0.3s;
+  }
+
+  #turn-indicator.performer { color: var(--ok); }
+  #turn-indicator.ai        { color: var(--accent); }
+
+  /* ── Centre: AI state + transcript ── */
+  #centre {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  #ai-state-bar {
+    padding: 16px 24px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  #ai-state-icon {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+
+  #ai-state-icon.thinking { background: var(--ai-think); animation: think-spin 1s linear infinite; }
+  #ai-state-icon.speaking { background: var(--ai-speak); animation: speak-pulse 0.5s ease-in-out infinite alternate; }
+  #ai-state-icon.done     { background: var(--ok); }
+  #ai-state-icon.error    { background: var(--danger); }
+
+  @keyframes think-spin {
+    0%   { box-shadow: 0 0 0 0 var(--ai-think); opacity: 1; }
+    50%  { box-shadow: 0 0 8px 4px var(--ai-think); opacity: 0.6; }
+    100% { box-shadow: 0 0 0 0 var(--ai-think); opacity: 1; }
+  }
+  @keyframes speak-pulse {
+    from { box-shadow: 0 0 4px var(--ai-speak); }
+    to   { box-shadow: 0 0 16px var(--ai-speak); }
+  }
+
+  #ai-state-label {
+    font-size: 18px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    transition: color 0.2s;
+  }
+
+  #ai-state-label.thinking { color: var(--ai-think); }
+  #ai-state-label.speaking { color: var(--ai-speak); }
+  #ai-state-label.done     { color: var(--ok); }
+  #ai-state-label.error    { color: var(--danger); }
+
+  #transcript-area {
+    flex: 1;
+    overflow: hidden;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 10px;
+    /* Fade top */
+    mask-image: linear-gradient(to bottom, transparent 0%, black 25%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 25%);
+  }
+
+  .transcript-line {
+    font-size: clamp(16px, 2.4vw, 28px);
+    line-height: 1.6;
+    color: var(--text);
+    opacity: 0.5;
+    transition: opacity 0.3s;
+  }
+
+  .transcript-line:last-child {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  /* Streaming line with cursor */
+  #streaming-line {
+    font-size: clamp(16px, 2.4vw, 28px);
+    line-height: 1.6;
+    color: var(--text);
+    min-height: 1.6em;
+  }
+
+  #stream-cursor {
+    display: inline-block;
+    width: 2px; height: 0.9em;
+    background: var(--accent);
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: blink 0.8s step-end infinite;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* Three-dot thinking animation */
+  .think-dots span {
+    animation: dot-bounce 1.2s ease-in-out infinite;
+    display: inline-block;
+    color: var(--ai-think);
+    font-size: 24px;
+  }
+  .think-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .think-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot-bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-8px)} }
+
+  /* ── Params row ── */
+  #params-row {
+    padding: 12px 24px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+  }
+
+  .param-chip {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  .param-chip b {
+    color: var(--text);
+    font-weight: normal;
+  }
+
+  /* ── Bottom: KTV now playing ── */
+  #ktv-strip {
+    padding: 12px 24px;
+    background: var(--panel);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 52px;
+    gap: 16px;
+  }
+
+  #ktv-now {
+    font-size: 13px;
+    color: var(--accent2);
+    letter-spacing: 1px;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #ktv-next {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  #ktv-mode-badge {
+    font-size: 10px;
+    padding: 3px 8px;
+    border: 1px solid var(--muted);
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  #ktv-mode-badge.active {
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+
+  /* ── Connection badge ── */
+  #conn-badge {
+    position: fixed;
+    top: 12px; right: 16px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    z-index: 100;
+  }
+
+  #conn-badge.connected { color: var(--ok); }
+  #conn-badge.error     { color: var(--danger); }
+</style>
+</head>
+<body>
+
+<span id="conn-badge">離線</span>
+
+<div class="page">
+
+  <!-- Top strip -->
+  <div id="top-strip">
+    <div id="mic-status">
+      <div id="mic-dot"></div>
+      <span id="mic-label">待機</span>
+    </div>
+    <div id="turn-indicator">—</div>
+  </div>
+
+  <!-- Centre: AI state + transcript -->
+  <div id="centre">
+    <div id="ai-state-bar">
+      <div id="ai-state-icon"></div>
+      <span id="ai-state-label">等待連線</span>
+    </div>
+    <div id="transcript-area">
+      <div id="transcript-lines"></div>
+      <div id="streaming-line"><span id="stream-cursor"></span></div>
+    </div>
+  </div>
+
+  <!-- Params row -->
+  <div id="params-row">
+    <span class="param-chip">情緒 <b id="p-emotion">—</b></span>
+    <span class="param-chip">態度 <b id="p-attitude">—</b></span>
+    <span class="param-chip">聲音 <b id="p-voice">—</b></span>
+    <span class="param-chip">懷疑 <b id="p-doubt">—</b></span>
+    <span class="param-chip">壓力 <b id="p-pressure">—</b></span>
+    <span class="param-chip">能量 <b id="p-energy">—</b></span>
+  </div>
+
+  <!-- KTV strip -->
+  <div id="ktv-strip">
+    <span id="ktv-mode-badge">AI 模式</span>
+    <span id="ktv-now">—</span>
+    <span id="ktv-next"></span>
+  </div>
+
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let aiState    = 'idle';   // idle | thinking | speaking | done | error
+let micLive    = false;
+let streamText = '';
+const transcriptHistory = [];  // last completed lines
+const MAX_HISTORY = 3;
+
+const STATE_LABELS = {
+  idle:     '等待中',
+  thinking: '思考中…',
+  speaking: '說話中…',
+  done:     '完成',
+  error:    '錯誤',
+  cancelled:'已打斷',
+};
+
+const EMOTION_LABELS = {
+  confused:   '困惑',
+  dissolving: '消融',
+  angry:      '憤怒',
+  curious:    '好奇',
+  numb:       '麻木',
+};
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const micDot     = document.getElementById('mic-dot');
+const micLabel   = document.getElementById('mic-label');
+const turnEl     = document.getElementById('turn-indicator');
+const stateIcon  = document.getElementById('ai-state-icon');
+const stateLabel = document.getElementById('ai-state-label');
+const streamLine = document.getElementById('streaming-line');
+const streamCursor = document.getElementById('stream-cursor');
+const histLines  = document.getElementById('transcript-lines');
+const connBadge  = document.getElementById('conn-badge');
+
+// ── State rendering ───────────────────────────────────────────────────────────
+function setAiState(s) {
+  aiState = s;
+  stateIcon.className   = s === 'idle' ? '' : s;
+  stateLabel.className  = s === 'idle' ? '' : s;
+  stateLabel.textContent = STATE_LABELS[s] || s;
+}
+
+function setMicLive(live) {
+  micLive = live;
+  micDot.className   = live ? 'live' : '';
+  micLabel.className = live ? 'live' : '';
+  micLabel.textContent = live ? '● MIC LIVE' : '待機';
+  turnEl.className   = live ? 'performer' : '';
+  turnEl.textContent = live ? '你的回合' : (aiState === 'speaking' ? 'AI 說話中' : '—');
+}
+
+function appendDelta(delta) {
+  streamText += delta;
+  streamLine.innerHTML = escHtml(streamText) + '<span id="stream-cursor"></span>';
+}
+
+function commitLine() {
+  if (!streamText.trim()) return;
+  transcriptHistory.push(streamText);
+  if (transcriptHistory.length > MAX_HISTORY) transcriptHistory.shift();
+  streamText = '';
+  streamLine.innerHTML = '<span id="stream-cursor"></span>';
+  renderHistory();
+}
+
+function renderHistory() {
+  histLines.innerHTML = transcriptHistory.map((line, i) => {
+    const opacity = 0.3 + (i / transcriptHistory.length) * 0.5;
+    return `<div class="transcript-line" style="opacity:${opacity}">${escHtml(line)}</div>`;
+  }).join('');
+}
+
+function clearTranscript() {
+  streamText = '';
+  transcriptHistory.length = 0;
+  streamLine.innerHTML = '<span id="stream-cursor"></span>';
+  histLines.innerHTML  = '';
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>');
+}
+
+function updateParams(params) {
+  if (!params) return;
+  document.getElementById('p-emotion').textContent  = EMOTION_LABELS[params.emotionalState] || params.emotionalState || '—';
+  document.getElementById('p-attitude').textContent = params.attitude === 'passive' ? '被動承受' : params.attitude === 'resistant' ? '主動反抗' : (params.attitude || '—');
+  document.getElementById('p-voice').textContent    = params.voice || '—';
+  document.getElementById('p-doubt').textContent    = params.doubt    != null ? params.doubt    + '/10' : '—';
+  document.getElementById('p-pressure').textContent = params.pressure != null ? params.pressure + '/10' : '—';
+  document.getElementById('p-energy').textContent   = params.energy   != null ? params.energy   + '/10' : '—';
+}
+
+function updateQueue(queue) {
+  const now  = queue?.nowPlaying;
+  const next = queue?.upcoming?.[0];
+  const badge = document.getElementById('ktv-mode-badge');
+  const nowEl = document.getElementById('ktv-now');
+  const nextEl = document.getElementById('ktv-next');
+
+  if (now) {
+    badge.textContent = 'KTV';
+    badge.className   = 'active';
+    nowEl.textContent = `♪  ${now.song.title} — ${now.song.artist}`;
+    nextEl.textContent = next ? `下一首：${next.song.title}` : '';
+  } else {
+    badge.textContent = 'AI 模式';
+    badge.className   = '';
+    nowEl.textContent = '—';
+    nextEl.textContent = next ? `待播：${next.song.title} — ${next.song.artist}` : '';
+  }
+}
+
+// ── Bus connection ────────────────────────────────────────────────────────────
+let bus = null;
+
+function connectBus() {
+  bus = new WebSocket(`ws://${location.host}/ws/bus?role=monitor`);
+
+  bus.onopen = () => {
+    connBadge.textContent = '已連線';
+    connBadge.className   = 'connected';
+    setAiState('idle');
+  };
+
+  bus.onclose = () => {
+    connBadge.textContent = '斷線';
+    connBadge.className   = 'error';
+    setTimeout(connectBus, 2000);
+  };
+
+  bus.onerror = () => {
+    connBadge.className = 'error';
+  };
+
+  bus.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    handleMsg(msg);
+  };
+}
+
+function handleMsg(msg) {
+  switch (msg.type) {
+
+    // ── VAD ──────────────────────────────────────────────────────────────────
+    case 'vad.speech_started':
+      setMicLive(true);
+      setAiState('idle');
+      break;
+
+    case 'vad.speech_stopped':
+      setMicLive(false);
+      break;
+
+    // ── AI lifecycle ──────────────────────────────────────────────────────────
+    case 'ai.thinking':
+      setAiState('thinking');
+      turnEl.className   = 'ai';
+      turnEl.textContent = 'AI 思考中';
+      break;
+
+    case 'transcript.delta':
+      if (aiState !== 'speaking') {
+        setAiState('speaking');
+        turnEl.className   = 'ai';
+        turnEl.textContent = 'AI 說話中';
+      }
+      appendDelta(msg.delta);
+      break;
+
+    case 'transcript.done':
+      commitLine();
+      break;
+
+    case 'ai.done':
+      setAiState('done');
+      turnEl.className   = '';
+      turnEl.textContent = '—';
+      // Fade "done" back to idle after 2s
+      setTimeout(() => { if (aiState === 'done') setAiState('idle'); }, 2000);
+      break;
+
+    case 'response.cancelled':
+      setAiState('cancelled');
+      commitLine();
+      break;
+
+    case 'ai.error':
+      setAiState('error');
+      stateLabel.textContent = '錯誤：' + (msg.message || '');
+      break;
+
+    case 'transcript.clear':
+      clearTranscript();
+      setAiState('idle');
+      break;
+
+    // ── Params from control panel ─────────────────────────────────────────────
+    case 'monitor.params':
+      updateParams(msg.params);
+      break;
+
+    // ── KTV ──────────────────────────────────────────────────────────────────
+    case 'ktv.play':
+      updateQueue({ nowPlaying: msg.item, upcoming: [] });
+      break;
+
+    case 'ktv.ended':
+      updateQueue({ nowPlaying: null, upcoming: [] });
+      break;
+
+    case 'queue.updated':
+      updateQueue(msg.queue);
+      break;
+
+    case 'weather.update':
+      // Weather not shown on monitor — ignore
+      break;
+
+    case 'bus.welcome':
+      // Server sends current queue on connect
+      break;
+  }
+}
+
+// ── Clock (shown in console, not on screen to keep minimal) ──────────────────
+// Init
+connectBus();
+</script>
+</body>
+</html>

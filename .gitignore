@@ -1,0 +1,25 @@
+node_modules/
+server/node_modules/
+ourT-electron/node_modules/
+server/.env
+server/settings.json
+.env
+*.env
+
+# Song media (add your own files, don't commit large binaries)
+songs/audio/
+songs/covers/
+
+# Python
+app2-yolo/venv/
+# Large model/task binary files — download separately
+app2-yolo/*.pt
+app2-yolo/*.task
+app2-yolo/__pycache__/
+app2-yolo/**/__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# macOS
+.DS_Store

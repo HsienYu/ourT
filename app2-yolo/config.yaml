@@ -1,0 +1,54 @@
+# App 2 — YOLO Camera Configuration
+
+camera:
+  source: webcam          # webcam | ndi | syphon
+  webcam_index: 0
+  ndi_source_name: ""     # NDI source name, e.g. "MY-COMPUTER (Camera)"
+  width: 1280
+  height: 720
+  fps_target: 30
+
+yolo:
+  model: yolov8n.pt       # yolov8n (fast) | yolov8s | yolov8m (accurate)
+  confidence: 0.45
+  device: ""              # "" = auto (MPS on Apple Silicon, CUDA if available, else CPU)
+
+heuristics:
+  # Global bias: shifts the masc/fem score axis
+  # -50 = everyone reads masculine, +50 = everyone reads feminine, 0 = neutral
+  bias: 0
+  # oscillation: if true, bias drifts sinusoidally over oscillation_period_s seconds
+  oscillation: false
+  oscillation_period_s: 30
+  oscillation_amplitude: 40
+  # randomize: add per-person random jitter to scores
+  randomize: false
+  randomize_strength: 20
+  # label thresholds (score 0=masc, 100=fem, 50=neutral zone)
+  threshold_masc: 35
+  threshold_fem: 65
+  threshold_fluid_band: 8   # ±8 around 50 = 不確定性
+
+labels:
+  masc:    "男性化"
+  fem:     "女性化"
+  neutral: "中性"
+  fluid:   "不確定性"
+
+colors:
+  # BGR for OpenCV
+  masc:    [255, 100, 80]   # blue-ish
+  fem:     [100, 100, 255]  # pink-ish
+  neutral: [180, 255, 180]  # green-ish
+  fluid:   [255, 220, 100]  # gold
+
+output:
+  ndi_enabled: false
+  ndi_name: "ourT-YOLO"
+  syphon_enabled: false
+  syphon_name: "ourT-YOLO"
+  mjpeg_quality: 75
+
+server:
+  port: 3001
+  host: "0.0.0.0"

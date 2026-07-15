@@ -1,0 +1,12 @@
+[
+  {
+    "id": "sample-001",
+    "title": "（範例歌曲 01）",
+    "artist": "藝人名稱",
+    "duration": 240,
+    "tags": ["範例", "請替換"],
+    "audioExt": "mp3",
+    "coverExt": "jpg",
+    "lrcOffset": 0
+  }
+]
