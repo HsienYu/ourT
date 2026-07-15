@@ -18,8 +18,7 @@ const { fork }  = require('child_process');
 const path      = require('path');
 const os        = require('os');
 const fs        = require('fs');
-// WebSocket is available as a global in Electron's Node environment
-const WebSocket = require('ws');
+const { WebSocket } = require('ws'); // main process is plain Node — no browser globals
 
 // ── Paths ──────────────────────────────────────────────────────────────────────
 // In development: resources live at ../../server relative to this file.
@@ -303,9 +302,9 @@ let busWs = null;
 let busReconnectTimer = null;
 
 function connectBus() {
-  if (busWs && busWs.readyState === WS.OPEN) return;
+  if (busWs && busWs.readyState === WebSocket.OPEN) return;
   const wsUrl = `ws://localhost:${serverPort}/ws/bus?role=main`;
-  busWs = new WS(wsUrl);
+  busWs = new WebSocket(wsUrl);
 
   busWs.onopen = () => {
     console.log('[main] Connected to bus');

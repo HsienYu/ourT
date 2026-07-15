@@ -19,23 +19,48 @@
     "mac": {
       "category": "public.app-category.entertainment",
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "icon": "assets/icon.icns"
     },
     "dmg": {
       "title": "ourT",
       "background": "assets/dmg-background.png",
-      "window": { "width": 540, "height": 380 }
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     },
     "extraResources": [
-      { "from": "../server",   "to": "server",   "filter": ["**/*", "!node_modules"] },
-      { "from": "../songs",    "to": "songs" },
-      { "from": "../server/node_modules", "to": "server/node_modules" }
+      {
+        "from": "../server",
+        "to": "server",
+        "filter": [
+          "**/*",
+          "!node_modules"
+        ]
+      },
+      {
+        "from": "../songs",
+        "to": "songs"
+      },
+      {
+        "from": "../server/node_modules",
+        "to": "server/node_modules"
+      }
     ],
     "files": [
       "main.js",
       "assets/**"
     ]
+  },
+  "dependencies": {
+    "ws": "^8.21.1"
   }
 }
