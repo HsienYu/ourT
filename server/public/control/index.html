@@ -607,10 +607,11 @@ function stopAudioCapture() {
 }
 
 function pushSessionUpdate() {
+  const btn = document.querySelector('[onclick="pushSessionUpdate()"]');
   if (!realtimeWs || realtimeWs.readyState !== WebSocket.OPEN) {
-    // Also push via bus so control can update without an active realtime session
     sendBus({ type: 'session.update', session: buildSessionPayload() });
     log('參數已推送（via bus）');
+    flashButton(btn, '✓ 已推送');
     return;
   }
   realtimeWs.send(JSON.stringify({
@@ -618,6 +619,7 @@ function pushSessionUpdate() {
     session: buildSessionPayload(),
   }));
   log('參數已更新');
+  flashButton(btn, '✓ 已更新');
 }
 
 function cancelResponse() {
@@ -744,20 +746,30 @@ function clearTranscript() {
 
 // ── KTV ───────────────────────────────────────────────────────────────────────
 async function playNext() {
+  const btn = document.querySelector('[onclick="playNext()"]');
   const res = await fetch('/api/queue/play', { method: 'POST' });
   const json = await res.json();
-  if (json.ok) log('播放：' + json.item?.song?.title);
-  else log('佇列為空');
+  if (json.ok) {
+    log('播放：' + json.item?.song?.title);
+    flashButton(btn, '✓ 播放中', 1500);
+  } else {
+    log('佇列為空');
+    flashButton(btn, '— 佇列空', 1500);
+  }
 }
 
 async function endSong() {
+  const btn = document.querySelector('[onclick="endSong()"]');
   await fetch('/api/queue/end', { method: 'POST' });
   log('歌曲結束');
+  flashButton(btn, '✓ 已結束', 1500);
 }
 
 async function clearQueue() {
+  const btn = document.querySelector('[onclick="clearQueue()"]');
   await fetch('/api/queue/clear', { method: 'POST' });
   log('佇列已清空');
+  flashButton(btn, '✓ 已清空', 1500);
 }
 
 function renderQueue(queue) {
@@ -861,22 +873,25 @@ async function loadVariantIntoEditor() {
     if (!res.ok) throw new Error('找不到歌詞檔案');
     const text = await res.text();
     document.getElementById('lyrics-editor').value = text;
-    document.getElementById('lyrics-editor-status').textContent =
-      `已載入：${lyricsCurrentVariant}  (${text.split('\n').length} 行)`;
+    setLyricsStatus(`已載入：${lyricsCurrentVariant}  (${text.split('\n').length} 行)`, 'ok');
     editorDirty = false;
   } catch (e) {
     log('載入歌詞失敗：' + e.message);
+    setLyricsStatus('載入失敗：' + e.message, 'error');
   }
 }
 
 async function generateVariant() {
   if (!lyricsCurrentSong) { log('請先選擇歌曲'); return; }
+  const btn = document.querySelector('[onclick="generateVariant()"]');
   const variant = lyricsCurrentVariant === 'original' || lyricsCurrentVariant === 'live'
     ? 'gender-swap'
     : lyricsCurrentVariant;
   const customPrompt = document.getElementById('lyrics-custom-prompt').value.trim();
   log(`生成中：${variant}⋯`);
-  document.getElementById('lyrics-editor-status').textContent = 'LLM 生成中⋯';
+  setLyricsStatus('LLM 生成中⋯', 'pending');
+  btn.disabled = true;
+  btn.textContent = '生成中⋯';
   try {
     const res = await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/generate`, {
       method: 'POST',
@@ -886,41 +901,51 @@ async function generateVariant() {
     const json = await res.json();
     if (json.error) throw new Error(json.error);
     document.getElementById('lyrics-editor').value = json.lrcText;
-    document.getElementById('lyrics-editor-status').textContent =
-      `已生成：${variant}  已推送到投影`;
+    setLyricsStatus(`✓ 已生成「${variant}」並推送到投影`, 'ok');
     selectVariant('live');
     await refreshVariantButtons(lyricsCurrentSong);
     log(`歌詞生成完成：${variant}`);
   } catch (e) {
     log('生成失敗：' + e.message);
-    document.getElementById('lyrics-editor-status').textContent = '生成失敗';
+    setLyricsStatus('✗ 生成失敗：' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'LLM 即時生成';
   }
 }
 
 async function pushLyricsOverride() {
   if (!lyricsCurrentSong) { log('請先選擇歌曲'); return; }
+  const btn = document.querySelector('[onclick="pushLyricsOverride()"]');
   const lrcText = document.getElementById('lyrics-editor').value.trim();
   if (!lrcText) { log('編輯器為空'); return; }
-  const res = await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/override`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lrcText, variant: lyricsCurrentVariant }),
-  });
-  const json = await res.json();
-  if (json.ok) {
-    document.getElementById('lyrics-editor-status').textContent = '已推送到投影';
+  try {
+    const res = await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/override`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lrcText, variant: lyricsCurrentVariant }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || '推送失敗');
+    setLyricsStatus('✓ 已推送到投影', 'ok');
     editorDirty = false;
     log('歌詞已推送到投影');
+    flashButton(btn, '✓ 已推送');
     selectVariant('live');
     await refreshVariantButtons(lyricsCurrentSong);
+  } catch (e) {
+    setLyricsStatus('✗ 推送失敗：' + e.message, 'error');
+    log('推送失敗：' + e.message);
   }
 }
 
 async function clearLyricsOverride() {
   if (!lyricsCurrentSong) return;
+  const btn = document.querySelector('[onclick="clearLyricsOverride()"]');
   await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/override`, { method: 'DELETE' });
-  document.getElementById('lyrics-editor-status').textContent = '覆蓋已清除（還原原版）';
+  setLyricsStatus('✓ 覆蓋已清除，還原原版', 'ok');
   log('歌詞覆蓋已清除');
+  flashButton(btn, '✓ 已清除');
   selectVariant('original');
   await loadVariantIntoEditor();
 }
@@ -960,13 +985,14 @@ async function loadSettings() {
     setSettingValue('setting-ktv-auto', String(settings.ktv.autoRewrite));
     setSettingValue('setting-yolo-confidence', settings.yolo.confidence);
     setSettingValue('setting-yolo-fps', settings.yolo.fpsTarget);
-    document.getElementById('settings-status').textContent = '已讀取。API key 僅顯示遮罩，留白即維持原值。';
+    setSettingsStatus('已讀取。API key 顯示遮罩，留白或不改即維持原值。', true);
   } catch (error) {
-    document.getElementById('settings-status').textContent = `無法讀取設定：${error.message}`;
+    setSettingsStatus('無法讀取設定：' + error.message, false);
   }
 }
 
 async function saveSettings() {
+  const btn = document.querySelector('[onclick="saveSettings()"]');
   const keys = {};
   for (const provider of ['openai', 'gemini', 'anthropic', 'groq', 'mistral']) {
     const value = getSettingValue(`setting-${provider}-key`).trim();
@@ -994,6 +1020,8 @@ async function saveSettings() {
       fpsTarget: Number(getSettingValue('setting-yolo-fps')),
     },
   };
+  btn.disabled = true;
+  btn.textContent = '儲存中⋯';
   try {
     const res = await fetch('/api/settings', {
       method: 'POST',
@@ -1003,12 +1031,55 @@ async function saveSettings() {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || '儲存失敗');
     state.settings = json.settings;
-    document.getElementById('settings-status').textContent = '已儲存。Realtime 提供者於下一次開始連線時套用。';
-    await loadSettings();
+    setSettingsStatus('✓ 已儲存。API key 存入 settings.json（非 .env）。Realtime 提供者下次連線時套用。', true);
     log('系統設定已儲存');
+    await loadSettings();
   } catch (error) {
-    document.getElementById('settings-status').textContent = `儲存失敗：${error.message}`;
+    setSettingsStatus('✗ 儲存失敗：' + error.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '儲存系統設定';
   }
+}
+
+// ── UI feedback helpers ───────────────────────────────────────────────────────
+
+/**
+ * Temporarily replace a button's label with a confirmation, then revert.
+ * The button is disabled during the flash to prevent double-clicks.
+ */
+function flashButton(btn, label, ms = 2000) {
+  if (!btn) return;
+  const original = btn.textContent;
+  btn.textContent = label;
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = original;
+    btn.disabled = false;
+  }, ms);
+}
+
+/**
+ * Update #settings-status with colour feedback that auto-reverts on success.
+ */
+function setSettingsStatus(text, ok = true) {
+  const el = document.getElementById('settings-status');
+  el.textContent = text;
+  el.style.color = ok ? 'var(--ok)' : 'var(--active)';
+  if (ok) setTimeout(() => { el.style.color = ''; }, 5000);
+}
+
+/**
+ * Update #lyrics-editor-status with colour feedback.
+ * state: 'ok' | 'error' | 'pending'
+ */
+function setLyricsStatus(text, state = 'ok') {
+  const el = document.getElementById('lyrics-editor-status');
+  el.textContent = text;
+  el.style.color = state === 'ok' ? 'var(--ok)'
+    : state === 'error' ? 'var(--active)'
+    : 'var(--warn)';
+  if (state === 'ok') setTimeout(() => { el.style.color = ''; }, 5000);
 }
 
 // ── Realtime badge ────────────────────────────────────────────────────────────

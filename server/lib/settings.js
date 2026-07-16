@@ -152,14 +152,21 @@ function updateSettings(patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new Error('settings patch must be an object');
   }
+  // Strip any masked placeholder values so they don't overwrite real keys
   if (patch.keys && typeof patch.keys === 'object') {
     patch = { ...patch, keys: { ...patch.keys } };
     for (const [provider, key] of Object.entries(patch.keys)) {
-      if (typeof key === 'string' && key.includes('***')) delete patch.keys[provider];
+      if (typeof key === 'string' && (key.includes('***') || key === '')) {
+        delete patch.keys[provider];
+      }
     }
   }
-  deepMerge(loadSettings(), patch);
+  // Ensure cache is populated, then merge in-place and persist
+  loadSettings();
+  deepMerge(settingsCache, patch);
   persistSettings();
+  // Invalidate cache so next read picks up the freshly written file
+  settingsCache = null;
   return loadSettings();
 }
 
@@ -184,7 +191,7 @@ function maskKey(key) {
   if (!key) return '';
   if (key.length <= 8) return '****';
   const last4 = key.slice(-4);
-  return `sk-***...${last4}`;
+  return `****...${last4}`;
 }
 
 /**

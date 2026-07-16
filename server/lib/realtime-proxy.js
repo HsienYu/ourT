@@ -38,10 +38,12 @@ function buildGeminiSetup({ instructions, voiceName, modelName }) {
   return {
     setup: {
       model: `models/${modelName || 'gemini-3.1-flash-live-preview'}`,
-      responseModalities: ['AUDIO'],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: voiceName || 'Aoede' },
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: voiceName || 'Aoede' },
+          },
         },
       },
       systemInstruction: {
