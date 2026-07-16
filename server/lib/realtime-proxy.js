@@ -73,7 +73,13 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
   let geminiReady    = false; // true after setupComplete received
 
   function handleOpenAIEvent(message) {
-    if (message.type === 'response.audio_transcript.delta') {
+    // Log every type for debugging (remove after confirmed working)
+    console.log('[realtime-proxy] OpenAI event:', message.type);
+
+    if (message.type === 'session.created') {
+      // OpenAI sends this after connecting — tell browser session is ready
+      sendToClient(clientWs, { type: 'session.created', provider: 'openai' });
+    } else if (message.type === 'response.audio_transcript.delta') {
       broadcast.toAll({ type: 'transcript.delta', delta: message.delta });
     } else if (message.type === 'response.audio_transcript.done') {
       broadcast.toAll({ type: 'transcript.done', transcript: message.transcript });
@@ -86,6 +92,7 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
     } else if (message.type === 'input_audio_buffer.speech_stopped') {
       broadcast.toAll({ type: 'vad.speech_stopped' });
     } else if (message.type === 'error') {
+      console.error('[realtime-proxy] OpenAI error detail:', JSON.stringify(message.error));
       broadcast.toAll({ type: 'ai.error', message: message.error?.message || 'unknown error' });
     }
   }

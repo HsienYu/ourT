@@ -469,7 +469,12 @@ wssRealtime.on('connection', (ws) => {
 
   // Use the new realtime proxy which handles both OpenAI and Gemini
   const { handleRealtimeClient } = require('./lib/realtime-proxy');
-  handleRealtimeClient(ws, broadcast, { openai: apiKeys.openai, gemini: apiKeys.gemini });
+  handleRealtimeClient(ws, broadcast, {
+    openai:        apiKeys.openai,
+    gemini:        apiKeys.gemini,
+    openaiRealtime: apiKeys.openaiRealtime,
+    geminiLive:    apiKeys.geminiLive,
+  });
 
   ws.on('close', () => {
     if (activeRealtimeWs === ws) activeRealtimeWs = null;
