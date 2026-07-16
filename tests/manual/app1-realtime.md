@@ -3,6 +3,12 @@
 Perform this checklist before each rehearsal and performance.
 Record results and evidence in the Evidence column.
 
+Pure-logic checks (session payload schemas, reconnect decisions, preset
+CRUD, voice/model catalog correctness) are covered by automated unit tests —
+see `tests/unit/README.md`. Run `node --test tests/unit/*.test.js` before
+each rehearsal as well; this manual protocol covers only what requires a
+live provider connection, real audio hardware, or the actual Electron app.
+
 ## Setup
 
 - [ ] `/control` → `系統設定` has a valid OpenAI or Gemini API key and the intended audio devices selected
@@ -61,13 +67,70 @@ Record results and evidence in the Evidence column.
 
 ## 5. Live Parameter Update
 
+Reconnect behavior is NOT the same on both providers — confirmed by a live
+incident where sending a Gemini live-update closed the WebSocket with code
+1007 (`Request contains an invalid argument`), which read as a repeated
+disconnect on every parameter change. Root cause: Gemini's public Live API
+has no live-update mechanism at all — its entire setup message (voice, model,
+AND instructions) is one-time. OpenAI only locks voice specifically.
+
+Run this whole section **twice** — once with `realtime.provider = openai`,
+once with `gemini` — since the expected behavior genuinely differs.
+
+### OpenAI
+
 | Check | Expected | Evidence |
 |---|---|---|
-| Change voice (e.g. Nova → Onyx) | Tap `更新參數` | |
-| Speak again | Next AI response uses new voice | |
-| Change emotional state to `憤怒` | Monitor params row updates | |
-| Speak again | AI response reflects angrier emotional state | |
-| Check monitor params row | Shows correct emotional state and slider values | |
+| With a session active, drag a slider (e.g. 自我懷疑) without clicking `更新參數` | Within ~1s, log shows `參數已即時更新`; session stays connected the whole time (no drop in the Electron console) | |
+| Change emotional state to `憤怒` without clicking `更新參數` | Monitor params row updates immediately; log shows an automatic push; session stays connected | |
+| Speak again after either change above | AI response reflects the new state | |
+| Type in `額外指令注入` textarea | Live update fires ~400ms after you stop typing (not on every keystroke); session stays connected | |
+| Change voice (e.g. Marin → Cedar) | Log shows `聲音已變更，需要重新連線才能套用…`; session reconnects (badge briefly drops then returns to `◉ 通話中`) | |
+| Speak again after voice reconnect | New voice is audible | |
+| Click `更新參數` manually | Still works as an explicit immediate push | |
+
+### Gemini Live
+
+| Check | Expected | Evidence |
+|---|---|---|
+| With a session active, drag a slider without clicking `更新參數` | Log shows `Gemini Live 無法在連線中更新設定，正在重新連線以套用變更…`; session reconnects (badge drops then returns to `◉ 通話中`) — this is expected, not a bug | |
+| Watch the Electron/server console during the reconnect | `gemini WebSocket closed: 1000` (clean close from our own reconnect) — must NOT be `1007 Request contains an invalid argument` | |
+| Change emotional state / attitude / prompt override | Same reconnect behavior each time | |
+| Drag a slider back and forth quickly (multiple ticks within 400ms) | Only ONE reconnect happens (debounced), not one per tick | |
+| Speak again after any reconnect | AI response reflects the new state | |
+| Change voice | Same reconnect path (no different from any other parameter, since Gemini always reconnects) | |
+
+---
+
+## 5c. AI Character Presets
+
+Must be tested in the actual Electron app, not just a regular browser tab —
+Electron does not implement `window.prompt()` at all (throws by design), so
+naming a preset uses a custom in-page modal (`#modal-overlay`) instead. A
+browser-only test would not have caught the original bug.
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Tune voice/attitude/state/sliders, click `+ 儲存目前設定為新預設` | A custom in-page dialog appears (not a native OS prompt) asking for a name | |
+| Type a name and click `確認` | New numbered row appears in `AI 角色預設` list with that name | |
+| Click `+ 儲存目前設定為新預設` again and click `取消` instead | No new preset is created | |
+| Change several params away from the saved preset, then click the preset's load button | All params/voice snap back to the saved combination; live update fires (always reconnects on Gemini, or if voice differs on OpenAI) | |
+| Click a preset's `儲存目前設定` button | Custom confirm dialog appears; confirming overwrites the preset with current params | |
+| Click a preset's `×` button | Custom confirm dialog appears; confirming removes the row | |
+| Restart the server, reopen `/control` | Previously saved presets still appear (persisted to settings.json) | |
+| Save 5+ presets | List keeps growing (not capped at 4) | |
+
+---
+
+## 5d. Voice / Model Catalog Accuracy
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Open `系統設定`, look at `OpenAI Realtime 模型` dropdown | Populated from a live fetch (not a hardcoded guess); includes at least `gpt-realtime-2.1` | |
+| Look at `Gemini Live 模型` / `Gemini 文字模型` dropdowns | Populated live; if empty/offline, falls back gracefully without breaking the form | |
+| Look at the AI 角色 voice grid | Shows 10 OpenAI voices; `Marin` and `Cedar` are visibly marked recommended; `Fable`/`Onyx`/`Nova` are absent | |
+| Switch `Realtime 語音提供者` to Gemini, open `Gemini Live 聲音` dropdown | Shows the full 30-voice catalog, not just 5 | |
+| Disconnect network briefly, reopen `系統設定` | Dropdowns still show the previously saved value (no data loss), status doesn't hard-fail | |
 
 ---
 
@@ -99,13 +162,40 @@ Record results and evidence in the Evidence column.
 
 ---
 
-## 6. Interrupt (打斷)
+## 6. Interrupt (打斷) — Manual and Voice Barge-in
+
+Run this whole section once with `realtime.provider = openai` and once with
+`gemini` — the interrupt path must behave identically on both.
 
 | Check | Expected | Evidence |
 |---|---|---|
-| While AI is speaking, tap 打斷 AI | AI voice stops immediately | |
+| While AI is speaking, tap 打斷 AI | AI voice stops **instantly** (not after a few more seconds of already-buffered audio) | |
 | | Projection: `— 打斷 —` appears in ai-meta | |
 | | Monitor: `已打斷` state shown | |
+| | Control log shows `AI 已被打斷` | |
+| While AI is speaking, interrupt by speaking over it (voice barge-in, no button) | AI voice stops within roughly one VAD detection window, without touching any button | |
+| | Projection/Monitor show the same `— 打斷 —` / `已打斷` cue as the manual button | |
+| After voice-interrupting, ask about a different topic | AI responds to the new topic, not the interrupted one — confirms the turn genuinely handed back to the performer | |
+| Tap 打斷 AI when the AI is NOT currently speaking | No spurious `— 打斷 —` cue appears (server only broadcasts the cue when a response was actually in progress); log shows `沒有進行中的 session 可打斷` if no session, or no visible effect if session is idle | |
+
+---
+
+## 6a. Electron Fullscreen and Window Layout
+
+Uses the platform-native `setFullScreen()` (macOS native fullscreen Space /
+Windows OS fullscreen), not kiosk mode — kiosk mode was tried first but is a
+known unreliable Electron/macOS combination (electron/electron#35684,
+#38261, #1054: dock/menu bar hide and the actual fullscreen resize don't
+consistently happen together). setFullScreen() is what every other
+full-screen macOS/Windows app uses.
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Launch the Electron app fresh | Control window opens at position (60, 60), not centered/cascaded | |
+| Click `切換投影全螢幕` in Control | Projection window actually resizes to fill the screen (not just menu bar hidden) — macOS: native fullscreen Space transition; Windows: covers the taskbar | |
+| Click it again | Projection window returns to its previous windowed size/position | |
+| Toggle from the tray menu (`切換投影全螢幕`) instead of Control | Same fullscreen toggle behavior | |
+| Watch the Electron main process console during both toggles | Shows `[main] projection fullscreen → true` / `→ false`; no `Uncaught Exception` | |
 
 ---
 

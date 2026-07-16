@@ -48,6 +48,7 @@ const { getWeather, formatForPrompt } = require('./lib/weather');
 const songQueue = require('./lib/song-queue');
 const settingsLib = require('./lib/settings');
 const aiProviders = require('./lib/ai-providers');
+const providerCatalog = require('./lib/provider-catalog');
 
 const PORT = process.env.PORT || 3000;
 
@@ -330,14 +331,57 @@ app.get('/api/settings/providers', (req, res) => {
   res.json(settingsLib.getProviderOptions());
 });
 
-app.get('/api/settings/models', (req, res) => {
+// Model lists: OpenAI and Gemini are fetched live from each provider's own
+// models.list endpoint (cached briefly, with a static fallback on failure —
+// see lib/provider-catalog.js). Other text-generation providers stay static.
+app.get('/api/settings/models', async (req, res) => {
   const provider = req.query.provider;
   if (!provider) return res.status(400).json({ error: 'provider query required' });
-  res.json(settingsLib.getModelsForProvider(provider));
+  const settings = settingsLib.getSettings(false);
+  try {
+    if (provider === 'openai') {
+      return res.json(await providerCatalog.fetchOpenAIRealtimeModels(settings.keys.openai));
+    }
+    if (provider === 'gemini') {
+      return res.json(await providerCatalog.fetchGeminiModels(settings.keys.gemini, 'text'));
+    }
+    if (provider === 'geminiLive') {
+      return res.json(await providerCatalog.fetchGeminiModels(settings.keys.gemini, 'live'));
+    }
+    res.json(settingsLib.getModelsForProvider(provider));
+  } catch (err) {
+    console.error('[settings/models] fetch failed:', err.message);
+    res.json(settingsLib.getModelsForProvider(provider));
+  }
+});
+
+// Voice catalogs: neither provider exposes a live "list voices" API — these
+// are the full, current, accurate static catalogs from provider-catalog.js.
+app.get('/api/settings/openai-voices', (req, res) => {
+  res.json(providerCatalog.OPENAI_REALTIME_VOICES);
 });
 
 app.get('/api/settings/gemini-voices', (req, res) => {
-  res.json(settingsLib.getGeminiLiveVoices());
+  res.json(providerCatalog.GEMINI_LIVE_VOICES);
+});
+
+// ── Character presets ─────────────────────────────────────────────────────
+app.get('/api/presets', (req, res) => {
+  res.json(settingsLib.getPresets());
+});
+
+app.post('/api/presets', (req, res) => {
+  try {
+    const presets = settingsLib.savePreset(req.body);
+    res.json({ ok: true, presets });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/presets/:id', (req, res) => {
+  const presets = settingsLib.deletePreset(req.params.id);
+  res.json({ ok: true, presets });
 });
 
 // ── HTTP server ───────────────────────────────────────────────────────────────

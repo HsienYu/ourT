@@ -129,12 +129,36 @@ function createWindow(opts) {
   return win;
 }
 
+/**
+ * Toggle the projection window between windowed and fullscreen.
+ *
+ * Uses the platform-native setFullScreen() rather than kiosk mode. Kiosk mode
+ * was tried first for a more aggressive edge-to-edge surface, but is a known
+ * unreliable Electron/macOS combination (see electron/electron#35684,
+ * #38261, #1054 — dock/menu bar and the actual fullscreen transition don't
+ * consistently happen together). setFullScreen() is the standard, reliable
+ * mechanism on both macOS (native fullscreen Space, menu bar/dock auto-hide
+ * as part of that transition) and Windows (OS fullscreen, covers the
+ * taskbar) — i.e. "whatever the OS itself calls fullscreen," matching how a
+ * user would expect this app to behave relative to any other app.
+ *
+ * Note: BrowserWindow has no setFrame() method on any platform — the frame
+ * can only be set at window creation, never toggled at runtime.
+ *
+ * @returns {boolean} the resulting fullscreen state, or null if there is no
+ *   projection window to toggle.
+ */
 function toggleProjectionFullscreen() {
-  if (!projectionWin || projectionWin.isDestroyed()) return;
-  const isFull = projectionWin.isFullScreen();
-  projectionWin.setFullScreen(!isFull);
-  projectionWin.setFrame(!isFull); // frameless when fullscreen, framed when windowed
-  console.log(`[main] projection fullscreen → ${!isFull}`);
+  try {
+    if (!projectionWin || projectionWin.isDestroyed()) return null;
+    const isFull = projectionWin.isFullScreen();
+    projectionWin.setFullScreen(!isFull);
+    console.log(`[main] projection fullscreen → ${!isFull}`);
+    return !isFull;
+  } catch (error) {
+    console.error('[main] toggleProjectionFullscreen failed:', error.message);
+    return null;
+  }
 }
 
 function base(url) {
@@ -144,7 +168,7 @@ function base(url) {
 function openControlSettings() {
   const settingsUrl = base('/control?settings=1');
   if (!controlWin || controlWin.isDestroyed()) {
-    controlWin = createWindow({ title: 'ourT — Control', width: 420, height: 900 });
+    controlWin = createWindow({ title: 'ourT — Control', x: 60, y: 60, width: 420, height: 900 });
     controlWin.loadURL(settingsUrl);
     controlWin.on('closed', () => { controlWin = null; });
   } else {
@@ -159,6 +183,7 @@ function openWindows() {
   projectionWin = createWindow({
     title:      'ourT — Projection',
     fullscreen: false,
+    fullscreenable: true,
     frame:      true,
     alwaysOnTop: false,
     width:      1280,
@@ -189,6 +214,8 @@ function openWindows() {
   // ── Control: operator panel ──────────────────────────────────────────────────
   controlWin = createWindow({
     title:  'ourT — Control',
+    x:      60,
+    y:      60,
     width:  420,
     height: 900,
   });
@@ -212,7 +239,7 @@ function createTray() {
       label: '開啟投影畫面',
       click: () => {
         if (!projectionWin || projectionWin.isDestroyed()) {
-          projectionWin = createWindow({ title: 'ourT — Projection', fullscreen: true, frame: false });
+          projectionWin = createWindow({ title: 'ourT — Projection', width: 1280, height: 720 });
           projectionWin.loadURL(base('/projection'));
         } else {
           projectionWin.show();
@@ -234,7 +261,7 @@ function createTray() {
       label: '開啟控制台',
       click: () => {
         if (!controlWin || controlWin.isDestroyed()) {
-          controlWin = createWindow({ title: 'ourT — Control', width: 420, height: 900 });
+          controlWin = createWindow({ title: 'ourT — Control', x: 60, y: 60, width: 420, height: 900 });
           controlWin.loadURL(base('/control'));
         } else {
           controlWin.show();
@@ -280,14 +307,7 @@ function createTray() {
 }
 
 // ── IPC: control panel → main process ──────────────────────────────────────────
-ipcMain.handle('projection:toggle-fullscreen', () => {
-  if (projectionWin && !projectionWin.isDestroyed()) {
-    const isFull = projectionWin.isFullScreen();
-    projectionWin.setFullScreen(!isFull);
-    return !isFull;
-  }
-  return false;
-});
+ipcMain.handle('projection:toggle-fullscreen', () => toggleProjectionFullscreen());
 
 // ── Bus WebSocket connection (main process) ────────────────────────────────────
 let busWs = null;

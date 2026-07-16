@@ -89,6 +89,51 @@
   }
   .voice-btn .lbl { font-size: 9px; color: var(--muted); display: block; margin-top: 2px; }
   .voice-btn.selected { border-color: var(--accent); color: var(--accent); background: rgba(224,208,255,0.07); }
+  .voice-btn.recommended .lbl { color: var(--ok); }
+
+  /* ── Character presets ── */
+  .preset-list { display: flex; flex-direction: column; gap: 4px; }
+  .preset-row {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); padding: 6px 8px;
+  }
+  .preset-row .preset-load {
+    flex: 1; background: transparent; border: none; color: var(--text);
+    font-family: monospace; font-size: 11px; text-align: left; cursor: pointer;
+    padding: 2px 0;
+  }
+  .preset-row .preset-load:hover { color: var(--accent); }
+  .preset-row .preset-num { color: var(--muted); margin-right: 6px; }
+  .preset-row .preset-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    font-family: monospace; font-size: 9px; padding: 3px 6px; cursor: pointer;
+  }
+  .preset-row .preset-btn:hover { color: var(--text); border-color: var(--text); }
+  .preset-row .preset-btn.danger:hover { color: var(--active); border-color: var(--active); }
+
+  /* ── Custom modal (replaces unsupported window.prompt() / native confirm) ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.75);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal-box {
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 18px; width: 100%; max-width: 320px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .modal-message {
+    font-size: 12px; color: var(--text); line-height: 1.6; white-space: pre-wrap;
+  }
+  .modal-input {
+    background: #000; border: 1px solid var(--border); color: var(--text);
+    font-family: monospace; font-size: 13px; padding: 8px 10px; outline: none;
+  }
+  .modal-input:focus { border-color: var(--accent); }
+  .modal-input.hidden { display: none; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
   /* ── Sliders ── */
   .param { display: flex; flex-direction: column; gap: 5px; }
@@ -270,12 +315,7 @@
         <div class="param-label">聲音 <span>Voice</span></div>
       </div>
       <div class="voice-grid" id="voice-grid">
-        <button class="voice-btn selected" data-voice="alloy" onclick="selectVoice('alloy')">Alloy<span class="lbl">中性</span></button>
-        <button class="voice-btn" data-voice="echo"  onclick="selectVoice('echo')">Echo<span class="lbl">中性偏男</span></button>
-        <button class="voice-btn" data-voice="fable" onclick="selectVoice('fable')">Fable<span class="lbl">溫柔男</span></button>
-        <button class="voice-btn" data-voice="onyx"  onclick="selectVoice('onyx')">Onyx<span class="lbl">低沉男</span></button>
-        <button class="voice-btn" data-voice="nova"  onclick="selectVoice('nova')">Nova<span class="lbl">年輕女</span></button>
-        <button class="voice-btn" data-voice="shimmer" onclick="selectVoice('shimmer')">Shimmer<span class="lbl">溫柔女</span></button>
+        <!-- Populated live from /api/settings/openai-voices — see loadOpenAIVoiceGrid() -->
       </div>
     </div>
 
@@ -345,7 +385,20 @@
     <!-- Custom system prompt override -->
     <div class="param">
       <div class="param-label">額外指令注入 <span>System Prompt Override (appended)</span></div>
-      <textarea id="prompt-override" placeholder="（可留空）臨時補充指令，如：現在開始說英文。"></textarea>
+      <textarea id="prompt-override" placeholder="（可留空）臨時補充指令，如：現在開始說英文。" oninput="onPromptOverrideInput()"></textarea>
+    </div>
+
+    <!-- ── Character presets ── -->
+    <div class="param">
+      <div class="param-header">
+        <div class="param-label">AI 角色預設 <span>Character Presets — 儲存目前調校，方便正式演出快速切換</span></div>
+      </div>
+      <div class="preset-list" id="preset-list">
+        <div style="color:var(--muted);font-size:11px">尚無已儲存的預設</div>
+      </div>
+      <div class="btn-row" style="margin-top:6px;">
+        <button class="btn" onclick="createNewPreset()">+ 儲存目前設定為新預設</button>
+      </div>
     </div>
 
     <!-- Session controls -->
@@ -395,10 +448,18 @@
       <label>歌曲分析提供者
         <select id="setting-analysis-provider"><option value="gemini">Gemini</option><option value="claude">Claude</option><option value="groq">Groq</option><option value="mistral">Mistral</option><option value="openai">OpenAI</option></select>
       </label>
-      <label>OpenAI Realtime 模型<input id="setting-openai-realtime-model" autocomplete="off"></label>
-      <label>Gemini Live 模型<input id="setting-gemini-live-model" autocomplete="off"></label>
-      <label>Gemini 文字模型<input id="setting-gemini-model" autocomplete="off"></label>
-      <label>Gemini Live 聲音<input id="setting-gemini-voice" autocomplete="off"></label>
+      <label>OpenAI Realtime 模型 <span style="font-size:9px;color:var(--muted)">(即時取得)</span>
+        <select id="setting-openai-realtime-model"></select>
+      </label>
+      <label>Gemini Live 模型 <span style="font-size:9px;color:var(--muted)">(即時取得)</span>
+        <select id="setting-gemini-live-model"></select>
+      </label>
+      <label>Gemini 文字模型 <span style="font-size:9px;color:var(--muted)">(即時取得)</span>
+        <select id="setting-gemini-model"></select>
+      </label>
+      <label>Gemini Live 聲音
+        <select id="setting-gemini-voice"></select>
+      </label>
       <label>OpenAI API Key<input id="setting-openai-key" type="password" autocomplete="new-password"></label>
       <label>Gemini API Key<input id="setting-gemini-key" type="password" autocomplete="new-password"></label>
       <label>Anthropic API Key<input id="setting-anthropic-key" type="password" autocomplete="new-password"></label>
@@ -509,10 +570,65 @@
 
 </div>
 
+<!-- ── Custom modal dialog ──────────────────────────────────────────────────
+     Electron does not implement window.prompt() at all (throws "prompt() is
+     not supported" by design — see electron/electron#472) and native
+     confirm()/alert() dialogs behave inconsistently across platforms/Electron
+     versions, so all text-entry and yes/no confirmations in this app go
+     through this in-page modal instead of native browser dialogs. -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-message" id="modal-message"></div>
+    <input type="text" id="modal-input" class="modal-input" autocomplete="off">
+    <div class="modal-actions">
+      <button class="btn" type="button" onclick="modalResolveAction(false)">取消</button>
+      <button class="btn primary" type="button" onclick="modalResolveAction(true)">確認</button>
+    </div>
+  </div>
+</div>
+
 <script>
+// ── Custom modal dialog ─────────────────────────────────────────────────────
+// Electron does not implement window.prompt() (throws by design), and native
+// confirm()/alert() are inconsistent across platforms — use this everywhere
+// instead of relying on browser-native dialogs.
+let modalResolve = null;
+
+function customPrompt(message, defaultValue = '') {
+  return new Promise((resolve) => {
+    modalResolve = resolve;
+    document.getElementById('modal-message').textContent = message;
+    const input = document.getElementById('modal-input');
+    input.classList.remove('hidden');
+    input.value = defaultValue;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+    setTimeout(() => input.focus(), 0);
+  });
+}
+
+function customConfirm(message) {
+  return new Promise((resolve) => {
+    modalResolve = resolve;
+    document.getElementById('modal-message').textContent = message;
+    document.getElementById('modal-input').classList.add('hidden');
+    document.getElementById('modal-overlay').classList.remove('hidden');
+  });
+}
+
+function modalResolveAction(accepted) {
+  const input = document.getElementById('modal-input');
+  const isPrompt = !input.classList.contains('hidden');
+  document.getElementById('modal-overlay').classList.add('hidden');
+  const resolve = modalResolve;
+  modalResolve = null;
+  if (!resolve) return;
+  if (isPrompt) resolve(accepted ? input.value : null);
+  else resolve(accepted);
+}
+
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
-  voice: 'alloy',
+  voice: 'marin', // OpenAI's recommended best-quality Realtime voice
   attitude: 'passive',
   emotionalState: 'confused',
   params: { doubt: 5, gender: 5, pressure: 5, label: 5, energy: 5 },
@@ -586,6 +702,13 @@ function handleBusMessage(msg) {
     case 'transcript.ai.done':
       setAiStateBadge('idle');
       break;
+    // Fired for both providers on manual 打斷 AND automatic voice barge-in
+    // (server only emits this when the AI was actually responding).
+    case 'response.cancelled':
+      flushOutputAudio();
+      setAiStateBadge('idle');
+      log('AI 已被打斷');
+      break;
   }
 }
 
@@ -631,6 +754,7 @@ function startSession() {
 
         realtimeWs.onopen = () => {
           log('Realtime WS 已連線，啟動 session');
+          lastAppliedVoice = currentVoiceForProvider();
           realtimeWs.send(JSON.stringify({
             type: 'session.start',
             config: buildSessionPayload(),
@@ -710,6 +834,7 @@ function startSession() {
         realtimeWs.onclose = () => {
           log('Realtime WS 關閉');
           state.sessionActive = false;
+          lastAppliedVoice = null;
           stopAudioCapture();
           stopOutputAudio();
           setAiStateBadge('idle');
@@ -817,26 +942,95 @@ function stopAudioCapture() {
   setAudioStatus('音訊待機');
 }
 
-function pushSessionUpdate() {
+// ── Live parameter updates ──────────────────────────────────────────────────
+// NOT symmetric across providers — confirmed by live testing (Gemini closed
+// the WebSocket with code 1007 "Request contains an invalid argument" as
+// soon as a live instruction update was attempted):
+//   - OpenAI: voice is locked after first audio; instructions CAN be pushed
+//     live via session.update at any other time.
+//   - Gemini Live (public API): the ENTIRE setup message — voice, model, AND
+//     instructions — is one-time. There is NO live-update mechanism at all.
+//     ANY character parameter change on Gemini requires a full reconnect.
+// Debounced either way so rapid slider drags collapse into one push/reconnect
+// instead of spamming the socket or reconnecting on every tick.
+let lastAppliedVoice = null;
+let pendingLiveUpdateTimer = null;
+
+function activeRealtimeProvider() {
+  return state.settings?.providers?.realtimeVoice || 'openai';
+}
+
+function currentVoiceForProvider() {
+  return activeRealtimeProvider() === 'gemini'
+    ? (state.settings?.models?.geminiVoice || 'Aoede')
+    : state.voice;
+}
+
+/**
+ * Call after any AI-character-affecting state change. Always updates the
+ * Monitor display immediately; if a session is active, pushes the change to
+ * the AI (OpenAI) or reconnects to apply it (Gemini) — debounced by default
+ * so multiple rapid changes (e.g. dragging a slider) collapse into one.
+ */
+function scheduleLiveUpdate(immediate = false) {
+  pushMonitorParams();
+  if (!state.sessionActive) return;
+  clearTimeout(pendingLiveUpdateTimer);
+  if (immediate) { applyLiveUpdate(); return; }
+  pendingLiveUpdateTimer = setTimeout(applyLiveUpdate, 400);
+}
+
+function applyLiveUpdate() {
   const btn = document.querySelector('[onclick="pushSessionUpdate()"]');
+  const provider = activeRealtimeProvider();
+  const voice = currentVoiceForProvider();
+  const voiceChanged = lastAppliedVoice !== null && voice !== lastAppliedVoice;
+
+  if (provider === 'gemini') {
+    // Gemini Live's public API has no live-update mechanism of any kind —
+    // any character parameter change requires a full reconnect.
+    log('Gemini Live 無法在連線中更新設定，正在重新連線以套用變更…');
+    startSession();
+    if (btn) flashButton(btn, '↻ 重新連線中');
+    return;
+  }
+
+  if (voiceChanged) {
+    log('聲音已變更，需要重新連線才能套用（OpenAI 在有聲音輸出後無法更換聲音）…');
+    startSession();
+    if (btn) flashButton(btn, '↻ 重新連線中');
+    return;
+  }
+
   if (!realtimeWs || realtimeWs.readyState !== WebSocket.OPEN) {
     sendBus({ type: 'session.update', session: buildSessionPayload() });
     log('參數已推送（via bus）');
-    flashButton(btn, '✓ 已推送');
+    if (btn) flashButton(btn, '✓ 已推送');
     return;
   }
   realtimeWs.send(JSON.stringify({
     type: 'session.update',
     session: buildSessionPayload(),
   }));
-  log('參數已更新');
-  flashButton(btn, '✓ 已更新');
+  log('參數已即時更新');
+  if (btn) flashButton(btn, '✓ 已更新');
+}
+
+// Manual button — explicit, immediate (no debounce).
+function pushSessionUpdate() {
+  scheduleLiveUpdate(true);
 }
 
 function cancelResponse() {
+  // Flush immediately for the lowest possible latency; the bus will also
+  // deliver a response.cancelled event shortly after, which calls this again
+  // (harmless no-op by then since activeOutputSources is already empty).
+  flushOutputAudio();
   if (realtimeWs && realtimeWs.readyState === WebSocket.OPEN) {
     realtimeWs.send(JSON.stringify({ type: 'response.cancel' }));
     log('AI 回應已打斷');
+  } else {
+    log('沒有進行中的 session 可打斷');
   }
 }
 
@@ -844,6 +1038,8 @@ function closeSession() {
   if (realtimeWs) realtimeWs.close();
   stopAudioCapture();
   stopOutputAudio();
+  clearTimeout(pendingLiveUpdateTimer);
+  lastAppliedVoice = null;
   setRealtimeBadge('', 'AI 未開始');
   setMicLive(false);
   log('Session 已關閉');
@@ -925,30 +1121,217 @@ function setProjectionMode(mode) {
   log('投影模式：' + mode);
 }
 
+/**
+ * Render the OpenAI voice grid from the live catalog endpoint (neither
+ * provider offers a live "list voices" API — see lib/provider-catalog.js —
+ * so this is the full, current, accurate static list). Marks marin/cedar as
+ * recommended per OpenAI's own guidance.
+ */
+async function loadOpenAIVoiceGrid(currentValue) {
+  const grid = document.getElementById('voice-grid');
+  if (!grid) return;
+  let voices;
+  try {
+    const res = await fetch('/api/settings/openai-voices');
+    voices = res.ok ? await res.json() : [];
+  } catch (error) {
+    console.warn('[settings] Could not load OpenAI voice grid:', error.message);
+    voices = [];
+  }
+  if (voices.length === 0) return; // keep whatever was rendered before on failure
+
+  const selected = (currentValue && voices.some((v) => v.id === currentValue)) ? currentValue : state.voice;
+  grid.replaceChildren(...voices.map((v) => {
+    const btn = document.createElement('button');
+    btn.className = 'voice-btn' + (v.id === selected ? ' selected' : '') + (v.label === '推薦' ? ' recommended' : '');
+    btn.dataset.voice = v.id;
+    btn.onclick = () => selectVoice(v.id);
+    btn.innerHTML = `${v.id[0].toUpperCase()}${v.id.slice(1)}<span class="lbl">${v.label || ''}${v.note ? ' · ' + v.note : ''}</span>`;
+    return btn;
+  }));
+  state.voice = selected;
+}
+
 function selectVoice(v) {
   state.voice = v;
   document.querySelectorAll('.voice-btn').forEach((b) => b.classList.remove('selected'));
-  document.querySelector(`[data-voice="${v}"]`).classList.add('selected');
+  const target = document.querySelector(`[data-voice="${v}"]`);
+  if (target) target.classList.add('selected');
+  scheduleLiveUpdate();
 }
 
 function setAttitude(a) {
   state.attitude = a;
   document.getElementById('att-passive').classList.toggle('selected', a === 'passive');
   document.getElementById('att-resistant').classList.toggle('selected', a === 'resistant');
-  pushMonitorParams();
+  scheduleLiveUpdate();
 }
 
 function setState(s) {
   state.emotionalState = s;
   document.querySelectorAll('.state-btn').forEach((b) => b.classList.remove('selected'));
   document.querySelector(`[data-state="${s}"]`).classList.add('selected');
-  pushMonitorParams();
+  scheduleLiveUpdate();
 }
 
 function updateSlider(key, val) {
   state.params[key] = parseInt(val);
   document.getElementById('v-' + key).textContent = val;
-  pushMonitorParams();
+  scheduleLiveUpdate();
+}
+
+function onPromptOverrideInput() {
+  scheduleLiveUpdate();
+}
+
+// ── Character presets ────────────────────────────────────────────────────────
+// Expandable list (not fixed at 4) — presets persist server-side via
+// GET/POST /api/presets, DELETE /api/presets/:id (see lib/settings.js).
+state.presets = [];
+
+function captureCurrentCharacter() {
+  return {
+    voice: state.voice,
+    attitude: state.attitude,
+    emotionalState: state.emotionalState,
+    params: { ...state.params },
+    promptOverride: document.getElementById('prompt-override').value,
+  };
+}
+
+/** Apply a saved preset's fields to state + the DOM controls, then push live. */
+function applyCharacterState(preset) {
+  if (preset.voice) selectVoiceSilent(preset.voice);
+  if (preset.attitude) {
+    state.attitude = preset.attitude;
+    document.getElementById('att-passive').classList.toggle('selected', preset.attitude === 'passive');
+    document.getElementById('att-resistant').classList.toggle('selected', preset.attitude === 'resistant');
+  }
+  if (preset.emotionalState) {
+    state.emotionalState = preset.emotionalState;
+    document.querySelectorAll('.state-btn').forEach((b) => b.classList.remove('selected'));
+    const target = document.querySelector(`[data-state="${preset.emotionalState}"]`);
+    if (target) target.classList.add('selected');
+  }
+  if (preset.params) {
+    for (const [key, val] of Object.entries(preset.params)) {
+      state.params[key] = val;
+      const slider = document.getElementById('s-' + key);
+      const label  = document.getElementById('v-' + key);
+      if (slider) slider.value = val;
+      if (label) label.textContent = val;
+    }
+  }
+  if (typeof preset.promptOverride === 'string') {
+    document.getElementById('prompt-override').value = preset.promptOverride;
+  }
+  scheduleLiveUpdate();
+}
+
+// Like selectVoice() but doesn't trigger a live update itself — used by
+// applyCharacterState() so a preset load results in exactly one live update.
+function selectVoiceSilent(v) {
+  state.voice = v;
+  document.querySelectorAll('.voice-btn').forEach((b) => b.classList.remove('selected'));
+  const target = document.querySelector(`[data-voice="${v}"]`);
+  if (target) target.classList.add('selected');
+}
+
+async function loadPresets() {
+  try {
+    const res = await fetch('/api/presets');
+    state.presets = res.ok ? await res.json() : [];
+  } catch (error) {
+    console.warn('[presets] Could not load presets:', error.message);
+    state.presets = [];
+  }
+  renderPresets();
+}
+
+function renderPresets() {
+  const container = document.getElementById('preset-list');
+  if (!container) return;
+  if (state.presets.length === 0) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:11px">尚無已儲存的預設</div>';
+    return;
+  }
+  container.innerHTML = '';
+  state.presets.forEach((preset, index) => {
+    const row = document.createElement('div');
+    row.className = 'preset-row';
+
+    const loadBtn = document.createElement('button');
+    loadBtn.className = 'preset-load';
+    loadBtn.innerHTML = `<span class="preset-num">${index + 1}.</span>${preset.name ? escapeHtmlText(preset.name) : '（未命名）'}`;
+    loadBtn.onclick = () => {
+      applyCharacterState(preset);
+      log(`已載入預設 ${index + 1}：${preset.name || '未命名'}`);
+    };
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'preset-btn';
+    saveBtn.textContent = '儲存目前設定';
+    saveBtn.title = '用目前的角色設定覆蓋此預設';
+    saveBtn.onclick = () => overwritePreset(preset);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'preset-btn danger';
+    removeBtn.textContent = '×';
+    removeBtn.title = '刪除此預設';
+    removeBtn.onclick = () => removePreset(preset);
+
+    row.append(loadBtn, saveBtn, removeBtn);
+    container.appendChild(row);
+  });
+}
+
+function escapeHtmlText(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function createNewPreset() {
+  // Electron does not support window.prompt() — use the custom modal.
+  const name = await customPrompt('為這個預設命名（可留空）：', '');
+  if (name === null) return; // cancelled
+  await persistPreset({ name, ...captureCurrentCharacter() });
+  log('已儲存新預設：' + (name || '未命名'));
+}
+
+async function overwritePreset(preset) {
+  const confirmed = await customConfirm(`用目前的角色設定覆蓋預設「${preset.name || '未命名'}」？`);
+  if (!confirmed) return;
+  await persistPreset({ ...preset, ...captureCurrentCharacter() });
+  log('已更新預設：' + (preset.name || '未命名'));
+}
+
+async function persistPreset(preset) {
+  try {
+    const res = await fetch('/api/presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(preset),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || '儲存失敗');
+    state.presets = json.presets;
+    renderPresets();
+  } catch (error) {
+    log('預設儲存失敗：' + error.message);
+  }
+}
+
+async function removePreset(preset) {
+  const confirmed = await customConfirm(`刪除預設「${preset.name || '未命名'}」？`);
+  if (!confirmed) return;
+  try {
+    const res = await fetch(`/api/presets/${encodeURIComponent(preset.id)}`, { method: 'DELETE' });
+    const json = await res.json();
+    state.presets = json.presets || [];
+    renderPresets();
+    log('已刪除預設：' + (preset.name || '未命名'));
+  } catch (error) {
+    log('預設刪除失敗：' + error.message);
+  }
 }
 
 function clearTranscript() {
@@ -1177,6 +1560,48 @@ function setSettingValue(id, value) {
   document.getElementById(id).value = value ?? '';
 }
 
+/**
+ * Populate a <select> from a live-fetched model list (array of strings).
+ * Falls back to a single option holding the currently saved value if the
+ * fetch fails or the account has no accessible models yet, so the Settings
+ * form never loses the configured value even when offline.
+ */
+async function populateModelSelect(id, endpoint, currentValue) {
+  const select = document.getElementById(id);
+  if (!select) return;
+  try {
+    const res = await fetch(endpoint);
+    const list = res.ok ? await res.json() : [];
+    const ids = Array.isArray(list) ? list.map((item) => (typeof item === 'string' ? item : item.id)) : [];
+    if (currentValue && !ids.includes(currentValue)) ids.unshift(currentValue);
+    select.replaceChildren(...ids.map((modelId) => new Option(modelId, modelId)));
+    if (currentValue) select.value = currentValue;
+  } catch (error) {
+    console.warn(`[settings] Could not load model list for ${id}:`, error.message);
+    select.replaceChildren(...(currentValue ? [new Option(currentValue, currentValue)] : []));
+  }
+}
+
+/**
+ * Populate a <select> from a static voice catalog (array of {id, label, note}).
+ * Neither OpenAI nor Gemini expose a live "list voices" API — see
+ * lib/provider-catalog.js for why these are accurate static lists.
+ */
+async function populateVoiceSelect(id, endpoint, currentValue) {
+  const select = document.getElementById(id);
+  if (!select) return [];
+  try {
+    const res = await fetch(endpoint);
+    const list = res.ok ? await res.json() : [];
+    select.replaceChildren(...list.map((v) => new Option(v.label ? `${v.id}（${v.label}）` : v.id, v.id)));
+    if (currentValue && Array.from(select.options).some((o) => o.value === currentValue)) select.value = currentValue;
+    return list;
+  } catch (error) {
+    console.warn(`[settings] Could not load voice list for ${id}:`, error.message);
+    return [];
+  }
+}
+
 async function loadSettings() {
   try {
     const res = await fetch('/api/settings');
@@ -1186,10 +1611,6 @@ async function loadSettings() {
     setSettingValue('setting-realtime-provider', settings.providers.realtimeVoice);
     setSettingValue('setting-lyrics-provider', settings.providers.lyricsRewrite);
     setSettingValue('setting-analysis-provider', settings.providers.songAnalysis);
-    setSettingValue('setting-openai-realtime-model', settings.models.openaiRealtime);
-    setSettingValue('setting-gemini-live-model', settings.models.geminiLive);
-    setSettingValue('setting-gemini-model', settings.models.gemini);
-    setSettingValue('setting-gemini-voice', settings.models.geminiVoice);
     for (const provider of ['openai', 'gemini', 'anthropic', 'groq', 'mistral']) {
       setSettingValue(`setting-${provider}-key`, settings.keys[provider]);
     }
@@ -1197,8 +1618,15 @@ async function loadSettings() {
     setSettingValue('setting-ktv-auto', String(settings.ktv.autoRewrite));
     setSettingValue('setting-yolo-confidence', settings.yolo.confidence);
     setSettingValue('setting-yolo-fps', settings.yolo.fpsTarget);
-    await refreshAudioDevices();
-    setSettingsStatus('已讀取。API key 顯示遮罩，留白或不改即維持原值。', true);
+    await Promise.all([
+      populateModelSelect('setting-openai-realtime-model', '/api/settings/models?provider=openai', settings.models.openaiRealtime),
+      populateModelSelect('setting-gemini-live-model', '/api/settings/models?provider=geminiLive', settings.models.geminiLive),
+      populateModelSelect('setting-gemini-model', '/api/settings/models?provider=gemini', settings.models.gemini),
+      populateVoiceSelect('setting-gemini-voice', '/api/settings/gemini-voices', settings.models.geminiVoice),
+      loadOpenAIVoiceGrid(settings.models.openaiVoice),
+      refreshAudioDevices(),
+    ]);
+    setSettingsStatus('已讀取。模型/聲音清單即時取得。API key 顯示遮罩，留白或不改即維持原值。', true);
   } catch (error) {
     setSettingsStatus('無法讀取設定：' + error.message, false);
   }
@@ -1418,6 +1846,7 @@ function setMicLive(live) {
 let outputAudioCtx  = null;
 let outputNextTime  = 0;   // AudioContext time when next chunk should start
 let outputSinkId    = null;
+let activeOutputSources = []; // scheduled/playing AudioBufferSourceNodes, for interrupt flushing
 const OUTPUT_SAMPLE_RATE = 24000; // both OpenAI and Gemini output 24kHz PCM16
 
 function setAudioStatus(text, isError = false) {
@@ -1478,6 +1907,11 @@ function playOutputAudio(base64Pcm16) {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
+    activeOutputSources.push(source);
+    source.onended = () => {
+      const idx = activeOutputSources.indexOf(source);
+      if (idx !== -1) activeOutputSources.splice(idx, 1);
+    };
 
     // Schedule gaplessly: start at outputNextTime, but clamp to now if we've fallen behind
     const startAt = Math.max(outputNextTime, ctx.currentTime);
@@ -1497,6 +1931,24 @@ function stopOutputAudio() {
     outputNextTime = 0;
     outputSinkId = null;
   }
+  activeOutputSources.length = 0;
+}
+
+/**
+ * Immediately stop all scheduled/currently-playing AI audio. This is what
+ * makes 打斷 (interrupt) actually audible instantly: cancelling the response
+ * server-side does not by itself stop audio the client already buffered and
+ * scheduled — playOutputAudio() schedules chunks on a running clock, so
+ * without this, several seconds of already-sent audio keep playing.
+ * Called on the manual 打斷 button and whenever the bus reports
+ * response.cancelled (covers both providers, both manual and voice barge-in).
+ */
+function flushOutputAudio() {
+  for (const source of activeOutputSources) {
+    try { source.stop(0); } catch { /* already stopped/ended — ignore */ }
+  }
+  activeOutputSources.length = 0;
+  if (outputAudioCtx) outputNextTime = outputAudioCtx.currentTime;
 }
 
 // ── Audio monitor ─────────────────────────────────────────────────────────────
@@ -1638,6 +2090,7 @@ function pushMonitorParams() {
 connectBus();
 initLyricsEditor();
 loadSettings();
+loadPresets();
 if (new URLSearchParams(location.search).has('settings')) {
   document.getElementById('runtime-settings').open = true;
 }

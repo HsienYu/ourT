@@ -133,3 +133,112 @@ The server now has OpenAI Realtime and Gemini Live bridge implementations, maske
 - [todo] Manual verify a Gemini Live session using `tests/manual/app1-realtime.md`
 - [todo] Verify selected microphone/output device, 24kHz input conversion, input/output meters, speaker playback, transcript roles, auto-scroll, and fullscreen
 - [todo] Record provider, latency, VAD, transcript, and audio-output evidence from rehearsal
+
+## Phase 8 — Interrupt, Live Parameters, Presets, Provider Parity [active]
+
+Fixed a live-rehearsal bug report covering: an Electron crash on fullscreen
+toggle (`setFrame` does not exist in Electron on any platform), the control
+window's default screen position, AI character parameters/voice/打斷 not
+actually reaching the AI, and a request that voice/model selection be as
+accurate as possible against each provider's real capabilities.
+
+Root-caused against each provider's own documentation: OpenAI's `session.update`
+relay was sending an invalid flat schema (silently rejecting the whole update,
+not just voice); voice is locked mid-session on OpenAI (after first audio) and
+on Gemini (for the entire session, no in-place update of any kind); 打斷 only
+sent a cancel to the provider but never stopped already-buffered local audio
+playback. Neither provider exposes a live "list voices" API, so voice
+catalogs are corrected static data; both do expose a real `models.list`
+endpoint, which is now fetched live with caching and fallback.
+
+**Correction (same-day, live-tested):** the first version of this phase
+implemented Gemini Live instruction updates via a `clientContent`
+`role:"system"` message, based on a Vertex AI / Gemini Enterprise Agent
+Platform doc page describing a different product than the public Gemini
+Developer API this app uses (`generativelanguage.googleapis.com`). Live
+rehearsal testing showed this actually closes the Gemini WebSocket with code
+1007 `Request contains an invalid argument` on every parameter change — the
+exact "live parameter changes cause disconnection" symptom reported. This
+matches widely-reported behavior from other developers hitting the same
+docs/API mismatch (see `googleapis/js-genai#820` and `#1085`). Fixed by
+removing the Gemini live-update path entirely: Gemini's public Live API has
+no in-place update mechanism of any kind (confirmed by its own capabilities
+guide: `send_client_content` "is only supported for seeding initial context
+history"), so **any** character parameter change on Gemini now reconnects,
+same as a voice change always does on OpenAI. `needsReconnect()` in
+`realtime-session.js` and its unit tests were updated to reflect this — the
+two providers are deliberately NOT symmetric here.
+
+- [done] `server/lib/realtime-session.js`: pure, unit-tested session payload
+  builders and `needsReconnect()` decision — NOT symmetric across providers:
+  OpenAI reconnects only on a voice change, Gemini reconnects on ANY
+  parameter change (see correction note above and in the module's header)
+- [done] Fix OpenAI `session.update` to the correct nested `audio.output.voice`
+  schema on connect, and to an instructions-only payload (no voice field) for
+  live updates
+- [done] Removed the broken Gemini live-instruction-update path entirely
+  (`buildGeminiInstructionsUpdate` — caused WebSocket close 1007 on every
+  parameter change); Gemini now always reconnects to apply any change,
+  debounced so rapid slider drags collapse into one reconnect
+- [done] Symmetric interrupt handling for both providers: local audio flush
+  (`flushOutputAudio()`, tracks and stops scheduled `AudioBufferSourceNode`s)
+  triggered by the authoritative signal from each provider (OpenAI
+  `input_audio_buffer.speech_started` / `response.cancelled`; Gemini
+  `serverContent.interrupted`), broadcast to projection/monitor for both
+  manual 打斷 and automatic voice barge-in
+- [done] Debounced automatic live-parameter push (attitude/state/sliders/prompt
+  override) without requiring the `更新參數` button: pushed live in-place on
+  OpenAI (unless voice changed, which reconnects), always reconnects on
+  Gemini (debounced so rapid changes collapse into one reconnect, not one
+  per slider tick)
+- [done] Expandable character preset system (`characterPresets` in
+  settings.js, `POST`/`DELETE /api/presets`) — save/load/overwrite/delete,
+  not capped at a fixed count
+- [done] Corrected OpenAI Realtime voice catalog (10 voices, `marin`/`cedar`
+  marked recommended, `fable`/`onyx`/`nova` removed as unconfirmed) and full
+  30-voice Gemini Live catalog — both providers have no live voice-list API,
+  so these are accurate static data (`server/lib/provider-catalog.js`)
+- [done] Live OpenAI/Gemini model fetching (`GET /api/settings/models`,
+  `/api/settings/openai-voices`, `/api/settings/gemini-voices`), 10-minute
+  in-memory cache, graceful fallback to a static seed list on any failure
+- [done] Electron fullscreen crash fixed: removed nonexistent `setFrame()`
+  call, wrapped in try/catch so a future window-API failure can't crash the
+  whole app mid-show
+- [done] Control window now opens at (60, 60) instead of OS default position
+
+**Correction (same-day, live-tested):** initially switched fullscreen from
+the crashing `setFrame()` call to `setKiosk()`, per an explicit choice to
+prefer a more aggressive edge-to-edge surface. Live testing showed kiosk mode
+only hid the menu bar without the window actually resizing to fullscreen —
+this matches long-standing, still-open upstream Electron/macOS bugs
+(electron/electron#35684, #38261, #1054) where dock/menu-bar hiding and the
+actual fullscreen transition don't reliably happen together in kiosk mode.
+Fixed by switching to the platform-native `setFullScreen()` instead — the
+same mechanism every other fullscreen macOS/Windows app uses ("system
+default" per the user's own suggestion), reliable, and simpler.
+
+**Second correction (same session):** "save current settings to a preset"
+silently did nothing in the real Electron app despite working in automated
+browser tests. Root cause: `createNewPreset()` used `window.prompt()`, which
+Electron does not implement at all — it throws `Error('prompt() is and will
+not be supported.')` by explicit design (electron/electron#472), a
+restriction that a Chromium-via-Playwright test against the bare Express
+server never exercises, since that's a real browser tab, not an Electron
+renderer. Fixed by adding a custom in-page modal dialog (`customPrompt()` /
+`customConfirm()`, `#modal-overlay`) used for all three preset actions
+(create/overwrite/delete confirmation), and verified directly inside a real
+Electron `BrowserWindow` (not just Playwright/Chromium) that: `window.prompt()`
+does throw as expected, the custom modal works correctly in that same
+restricted renderer context, and the full create-preset flow persists
+correctly through the real `/api/presets` endpoints end-to-end.
+- [done] Unit tests (`tests/unit/`, Node's built-in `node:test`, no new
+  dependency): `realtime-session.test.js`, `settings-presets.test.js`,
+  `provider-catalog.test.js` — 28 tests, all passing
+- [done] `tests/manual/app1-realtime.md` extended: live parameter update
+  (both providers), presets, voice/model catalog accuracy, interrupt/barge-in
+  (both providers), kiosk fullscreen + window layout
+- [todo] Live rehearsal re-verification of all of the above against real
+  OpenAI and Gemini sessions, with evidence recorded
+- [todo] `conversation.item.truncate` on interrupt (deferred — keeps OpenAI's
+  server-side conversation history precisely in sync with what was actually
+  heard; not required for interrupt to work or sound correct live)

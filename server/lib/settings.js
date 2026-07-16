@@ -52,6 +52,10 @@ const DEFAULT_SETTINGS = {
     outputDeviceId: '',
     outputDeviceLabel: '',
   },
+  // Saved AI character presets (voice/attitude/emotional state/sliders/prompt
+  // override), so operators can tune during rehearsal and quickly recall a
+  // known-good combination during the show. Expandable — not fixed at 4.
+  characterPresets: [],
 };
 
 let settingsCache = null;
@@ -238,12 +242,22 @@ function getProviderOptions() {
   return getProviderStatus();
 }
 
+/**
+ * @deprecated Voice catalogs now live in lib/provider-catalog.js, served via
+ * the dedicated GET /api/settings/openai-voices and /api/settings/gemini-voices
+ * endpoints (neither provider exposes a live "list voices" API, so these are
+ * static but kept accurate/current there). Kept here only so any stale caller
+ * still gets a reasonable answer instead of an error.
+ */
 function getGeminiLiveVoices() {
   return getModelsForProvider('geminiVoice');
 }
 
 /**
- * Get available models for a provider.
+ * Get available models for text-generation providers that have no live
+ * models.list endpoint wired up (or where a static seed is sufficient).
+ * OpenAI/Gemini realtime and live models are fetched live instead — see
+ * lib/provider-catalog.js and the /api/settings/models route.
  * @param {string} provider
  * @returns {string[]}
  */
@@ -273,6 +287,63 @@ function resetSettings() {
   persistSettings();
 }
 
+// ── Character presets ──────────────────────────────────────────────────────
+// Kept separate from the main settings-form save flow (updateSettings) so
+// saving a preset never risks touching API keys or provider selection.
+
+/**
+ * Get the current list of saved character presets.
+ * @returns {Array<object>}
+ */
+function getPresets() {
+  const settings = loadSettings();
+  return JSON.parse(JSON.stringify(settings.characterPresets || []));
+}
+
+/**
+ * Save (create or overwrite) a character preset.
+ * @param {object} preset - { id?, name, voice, attitude, emotionalState, params, promptOverride }
+ *   If `id` matches an existing preset, that slot is overwritten in place.
+ *   Otherwise a new preset is appended with a freshly generated id.
+ * @returns {Array<object>} the updated preset list
+ */
+function savePreset(preset) {
+  if (!preset || typeof preset !== 'object') {
+    throw new Error('preset must be an object');
+  }
+  loadSettings();
+  const list = settingsCache.characterPresets || (settingsCache.characterPresets = []);
+  const entry = {
+    id: preset.id || `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: preset.name || '',
+    voice: preset.voice || null,
+    attitude: preset.attitude || null,
+    emotionalState: preset.emotionalState || null,
+    params: preset.params || null,
+    promptOverride: preset.promptOverride || '',
+  };
+  const existingIndex = list.findIndex((item) => item.id === entry.id);
+  if (existingIndex !== -1) {
+    list[existingIndex] = entry;
+  } else {
+    list.push(entry);
+  }
+  persistSettings();
+  return getPresets();
+}
+
+/**
+ * Delete a character preset by id.
+ * @param {string} id
+ * @returns {Array<object>} the updated preset list
+ */
+function deletePreset(id) {
+  loadSettings();
+  settingsCache.characterPresets = (settingsCache.characterPresets || []).filter((item) => item.id !== id);
+  persistSettings();
+  return getPresets();
+}
+
 module.exports = {
   loadSettings,
   getSettings,
@@ -285,4 +356,7 @@ module.exports = {
   getGeminiLiveVoices,
   getModelsForProvider,
   resetSettings,
+  getPresets,
+  savePreset,
+  deletePreset,
 };
