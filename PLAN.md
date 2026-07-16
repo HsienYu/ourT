@@ -123,9 +123,13 @@ TDD not required. Manual verification protocols required before each rehearsal.
 
 ## Phase 7 — Multi-Provider Realtime and Settings [active]
 
-The server now has OpenAI Realtime and Gemini Live bridge implementations, masked runtime settings APIs, an operator settings panel, and input/output audio diagnostics. Electron uses `~/Library/Application Support/ourt/settings.json` as the sole runtime configuration source; legacy `server/settings.json` values and `.env` keys are imported once only when that JSON file does not exist. Static checks pass; live provider verification has not been performed.
+The server now has OpenAI Realtime and Gemini Live bridge implementations, masked runtime settings APIs, an operator settings panel, and input/output audio diagnostics. Electron uses `~/Library/Application Support/ourt/settings.json` as the sole runtime configuration source; legacy `server/settings.json` values and `.env` keys are imported once only when that JSON file does not exist. Gemini Live setup and audio response were externally confirmed; complete end-to-end rehearsal verification remains pending.
 
+- [done] Add speaker-aware input/output transcript events and OpenCC Taiwan Traditional display normalization
+- [done] Enable Gemini Live input/output transcription and OpenAI Chinese input transcription
+- [done] Add distinct 演員/AI transcript turns and Projection transcript auto-scroll
+- [done] Relay Control Projection fullscreen requests to Electron
 - [todo] Manual verify an OpenAI Realtime session using `tests/manual/app1-realtime.md`
 - [todo] Manual verify a Gemini Live session using `tests/manual/app1-realtime.md`
-- [todo] Verify selected microphone/output device, 24kHz input conversion, input/output meters, and speaker playback
+- [todo] Verify selected microphone/output device, 24kHz input conversion, input/output meters, speaker playback, transcript roles, auto-scroll, and fullscreen
 - [todo] Record provider, latency, VAD, transcript, and audio-output evidence from rehearsal

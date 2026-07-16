@@ -77,13 +77,25 @@ Record results and evidence in the Evidence column.
 |---|---|---|
 | Open `系統設定` in `/control` | Existing API keys remain masked | |
 | Tap `測試麥克風` with no active session | INPUT graph moves while speaking; status says `AudioWorklet 已接收麥克風 PCM 資料` | |
-| Tap `測試輸出` | A 440 Hz tone is audible from selected/system output | |
+| Tap `測試輸出` | Two 880 Hz tones are audible from selected/system output | |
 | Select Gemini Live, save, then start a fresh session | Gemini connects and the mic/VAD flow works | |
 | Select OpenAI, save, then start a fresh session | OpenAI connects and the mic/VAD flow works | |
 | Select intended audio input/output, save, then start a fresh session | Controls report the selected device; selection applies to the new session | |
 | Speak at normal volume | INPUT meter moves and shows a non-empty dB value | |
 | Wait for the AI response | OUTPUT meter moves and AI speech is audible from the selected/system output | |
 | Watch the audio status line during a session | It progresses through `輸入擷取中` → `提供者已就緒` → `麥克風音訊已傳送` → `AI 音訊播放中` | |
+
+---
+
+## 5b. Transcript Roles, Locale, and Projection
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Speak a Taiwan Mandarin sentence | Monitor and Projection show an `演員` turn in 臺灣繁體中文 | |
+| Wait for the AI response | Monitor and Projection show a separately labelled `AI` turn in 臺灣繁體中文 | |
+| Speak terms with regional variants, such as `軟體` or `腳踏車` | Display uses 臺灣慣用字詞; no Simplified Chinese appears | |
+| Send enough turns to exceed the visible Projection area | Projection transcript automatically follows the newest turn | |
+| Tap the Control `投影全螢幕` button | Electron Projection window enters/exits fullscreen on each tap | |
 
 ---
 

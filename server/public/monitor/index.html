@@ -173,6 +173,14 @@
     opacity: 1;
     color: var(--accent);
   }
+  .transcript-line.user { color: var(--ok); }
+  .transcript-line.ai { color: var(--accent); }
+  .transcript-speaker {
+    font-size: 0.55em;
+    letter-spacing: 0.14em;
+    margin-right: 0.7em;
+    opacity: 0.8;
+  }
 
   /* Streaming line with cursor */
   #streaming-line {
@@ -334,9 +342,9 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let aiState    = 'idle';   // idle | thinking | speaking | done | error
 let micLive    = false;
-let streamText = '';
-const transcriptHistory = [];  // last completed lines
-const MAX_HISTORY = 3;
+const streamingText = { user: '', ai: '' };
+const transcriptHistory = [];
+const MAX_HISTORY = 4;
 
 const STATE_LABELS = {
   idle:     '等待中',
@@ -383,29 +391,37 @@ function setMicLive(live) {
   turnEl.textContent = live ? '你的回合' : (aiState === 'speaking' ? 'AI 說話中' : '—');
 }
 
-function appendDelta(delta) {
-  streamText += delta;
-  streamLine.innerHTML = escHtml(streamText) + '<span id="stream-cursor"></span>';
+function appendDelta(role, delta) {
+  streamingText[role] += delta;
+  renderStreaming(role);
 }
 
-function commitLine() {
-  if (!streamText.trim()) return;
-  transcriptHistory.push(streamText);
+function commitLine(role) {
+  const text = streamingText[role].trim();
+  if (!text) return;
+  transcriptHistory.push({ role, text });
   if (transcriptHistory.length > MAX_HISTORY) transcriptHistory.shift();
-  streamText = '';
+  streamingText[role] = '';
   streamLine.innerHTML = '<span id="stream-cursor"></span>';
   renderHistory();
 }
 
+function renderStreaming(role) {
+  streamLine.className = role;
+  streamLine.innerHTML = `<span class="transcript-speaker">${role === 'user' ? '演員' : 'AI'}</span>${escHtml(streamingText[role])}<span id="stream-cursor"></span>`;
+}
+
 function renderHistory() {
-  histLines.innerHTML = transcriptHistory.map((line, i) => {
+  histLines.innerHTML = transcriptHistory.map(({ role, text }, i) => {
     const opacity = 0.3 + (i / transcriptHistory.length) * 0.5;
-    return `<div class="transcript-line" style="opacity:${opacity}">${escHtml(line)}</div>`;
+    const speaker = role === 'user' ? '演員' : 'AI';
+    return `<div class="transcript-line ${role}" style="opacity:${opacity}"><span class="transcript-speaker">${speaker}</span>${escHtml(text)}</div>`;
   }).join('');
 }
 
 function clearTranscript() {
-  streamText = '';
+  streamingText.user = '';
+  streamingText.ai = '';
   transcriptHistory.length = 0;
   streamLine.innerHTML = '<span id="stream-cursor"></span>';
   histLines.innerHTML  = '';
@@ -496,17 +512,25 @@ function handleMsg(msg) {
       turnEl.textContent = 'AI 思考中';
       break;
 
-    case 'transcript.delta':
+    case 'transcript.user.delta':
+      appendDelta('user', msg.delta);
+      break;
+
+    case 'transcript.user.done':
+      commitLine('user');
+      break;
+
+    case 'transcript.ai.delta':
       if (aiState !== 'speaking') {
         setAiState('speaking');
         turnEl.className   = 'ai';
         turnEl.textContent = 'AI 說話中';
       }
-      appendDelta(msg.delta);
+      appendDelta('ai', msg.delta);
       break;
 
-    case 'transcript.done':
-      commitLine();
+    case 'transcript.ai.done':
+      commitLine('ai');
       break;
 
     case 'ai.done':
@@ -519,7 +543,7 @@ function handleMsg(msg) {
 
     case 'response.cancelled':
       setAiState('cancelled');
-      commitLine();
+      commitLine('ai');
       break;
 
     case 'ai.error':

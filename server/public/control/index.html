@@ -580,10 +580,10 @@ function handleBusMessage(msg) {
     case 'ai.done':
       setAiStateBadge('idle');
       break;
-    case 'transcript.delta':
+    case 'transcript.ai.delta':
       setAiStateBadge('speaking');
       break;
-    case 'transcript.done':
+    case 'transcript.ai.done':
       setAiStateBadge('idle');
       break;
   }

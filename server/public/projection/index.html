@@ -61,11 +61,13 @@
 
   #transcript-box {
     position: relative;
-    max-height: 70vh; overflow: hidden;
+    max-height: 70vh; overflow-y: auto;
     border-left: 2px solid #1a1a1a;
     padding-left: 20px;
     transition: border-color 0.6s;
+    scrollbar-width: none;
   }
+  #transcript-box::-webkit-scrollbar { display: none; }
 
   /* Border colour reflects whose turn it is */
   #transcript-box.performer-turn { border-color: #2a2a2a; }
@@ -84,6 +86,17 @@
     mask-image: linear-gradient(to bottom, transparent 0%, black 18%);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 18%);
   }
+  .transcript-turn { margin-top: 0.7em; }
+  .transcript-speaker {
+    display: block;
+    font-size: 0.28em;
+    letter-spacing: 0.18em;
+    margin-bottom: 0.25em;
+  }
+  .transcript-turn.user { color: #a8d8be; }
+  .transcript-turn.user .transcript-speaker { color: #5fa879; }
+  .transcript-turn.ai { color: var(--accent); }
+  .transcript-turn.ai .transcript-speaker { color: #a98fd6; }
 
   /* ── Cursor animations ── */
   #cursor {
@@ -290,7 +303,8 @@
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentMode          = 'idle';
-let fullTranscript       = '';
+const transcriptTurns    = [];
+const streamingTurns     = { user: '', ai: '' };
 let lrcLines             = [];
 let currentLineIndex     = -1;
 let currentSongId        = null;
@@ -331,21 +345,35 @@ function setCursorState(state) {
 }
 
 // ── AI transcript ─────────────────────────────────────────────────────────────
-function appendTranscriptDelta(delta) {
-  fullTranscript += delta;
-  const display = fullTranscript.length > 600
-    ? fullTranscript.slice(-600) : fullTranscript;
-  transcriptText.innerHTML =
-    escHtml(display) +
-    '<span id="cursor"></span>' +
-    '<span id="thinking-dots"><span></span><span></span><span></span></span>';
+function appendTranscriptDelta(role, delta) {
+  streamingTurns[role] += delta;
+  renderTranscript();
+}
+
+function commitTranscript(role) {
+  const text = streamingTurns[role].trim();
+  if (text) transcriptTurns.push({ role, text });
+  if (transcriptTurns.length > 12) transcriptTurns.shift();
+  streamingTurns[role] = '';
+  renderTranscript();
+}
+
+function renderTranscript() {
+  const turns = [...transcriptTurns];
+  for (const role of ['user', 'ai']) {
+    if (streamingTurns[role]) turns.push({ role, text: streamingTurns[role] });
+  }
+  transcriptText.innerHTML = turns.map(({ role, text }) =>
+    `<div class="transcript-turn ${role}"><span class="transcript-speaker">${role === 'user' ? '演員' : 'AI'}</span>${escHtml(text)}</div>`,
+  ).join('') + '<span id="cursor"></span><span id="thinking-dots"><span></span><span></span><span></span></span>';
+  requestAnimationFrame(() => { transcriptBox.scrollTop = transcriptBox.scrollHeight; });
 }
 
 function clearTranscript() {
-  fullTranscript = '';
-  transcriptText.innerHTML =
-    '<span id="cursor"></span>' +
-    '<span id="thinking-dots"><span></span><span></span><span></span></span>';
+  transcriptTurns.length = 0;
+  streamingTurns.user = '';
+  streamingTurns.ai = '';
+  renderTranscript();
   document.getElementById('ai-meta').textContent = '';
   setCursorState('idle');
 }
@@ -546,14 +574,25 @@ function handleBusMessage(msg) {
       break;
 
     // ── Transcript ────────────────────────────────────────────────────────────
-    case 'transcript.delta':
+    case 'transcript.user.delta':
       if (currentMode !== 'ai') setMode('ai');
-      setCursorState('speaking');
-      appendTranscriptDelta(msg.delta);
+      setCursorState('idle');
+      appendTranscriptDelta('user', msg.delta);
       break;
 
-    case 'transcript.done':
-      break;   // already shown char by char
+    case 'transcript.user.done':
+      commitTranscript('user');
+      break;
+
+    case 'transcript.ai.delta':
+      if (currentMode !== 'ai') setMode('ai');
+      setCursorState('speaking');
+      appendTranscriptDelta('ai', msg.delta);
+      break;
+
+    case 'transcript.ai.done':
+      commitTranscript('ai');
+      break;
 
     case 'response.cancelled':
       document.getElementById('ai-meta').textContent = '— 打斷 —';

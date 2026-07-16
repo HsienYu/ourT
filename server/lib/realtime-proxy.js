@@ -5,8 +5,10 @@
 'use strict';
 
 const WebSocket = require('ws');
+const OpenCC = require('opencc-js');
 
 const GEMINI_LIVE_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+const toTaiwanTraditional = OpenCC.Converter({ from: 'cn', to: 'twp' });
 
 function downsample24to16(pcm24k) {
   const samples24k = new Int16Array(
@@ -56,6 +58,8 @@ function buildGeminiSetup({ instructions, voiceName, modelName }) {
           endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
         },
       },
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
     },
   };
 }
@@ -64,6 +68,10 @@ function sendToClient(clientWs, event) {
   if (clientWs.readyState === WebSocket.OPEN) {
     clientWs.send(JSON.stringify(event));
   }
+}
+
+function transcriptEvent(type, text) {
+  return { type, delta: toTaiwanTraditional(text || '') };
 }
 
 function handleRealtimeClient(clientWs, broadcast, apiKeys) {
@@ -81,10 +89,14 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
     if (message.type === 'session.updated') {
       // Do not stream microphone audio until OpenAI has accepted session config.
       sendToClient(clientWs, { type: 'proxy.ready', provider: 'openai' });
+    } else if (message.type === 'conversation.item.input_audio_transcription.delta') {
+      broadcast.toAll(transcriptEvent('transcript.user.delta', message.delta));
+    } else if (message.type === 'conversation.item.input_audio_transcription.completed') {
+      broadcast.toAll({ type: 'transcript.user.done', transcript: toTaiwanTraditional(message.transcript || '') });
     } else if (message.type === 'response.audio_transcript.delta' || message.type === 'response.output_audio_transcript.delta') {
-      broadcast.toAll({ type: 'transcript.delta', delta: message.delta });
+      broadcast.toAll(transcriptEvent('transcript.ai.delta', message.delta));
     } else if (message.type === 'response.audio_transcript.done' || message.type === 'response.output_audio_transcript.done') {
-      broadcast.toAll({ type: 'transcript.done', transcript: message.transcript });
+      broadcast.toAll({ type: 'transcript.ai.done', transcript: toTaiwanTraditional(message.transcript || '') });
     } else if (message.type === 'response.created') {
       broadcast.toAll({ type: 'ai.thinking' });
     } else if (message.type === 'response.done') {
@@ -109,10 +121,10 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
     }
 
     if (content.inputTranscription?.text) {
-      broadcast.toAll({ type: 'transcript.delta', delta: content.inputTranscription.text });
+      broadcast.toAll(transcriptEvent('transcript.user.delta', content.inputTranscription.text));
     }
     if (content.outputTranscription?.text) {
-      broadcast.toAll({ type: 'transcript.delta', delta: content.outputTranscription.text });
+      broadcast.toAll(transcriptEvent('transcript.ai.delta', content.outputTranscription.text));
     }
     if (content.activityStart) {
       sendToClient(clientWs, { type: 'input_audio_buffer.speech_started' });
@@ -121,9 +133,10 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
     if (content.activityEnd || content.audioStreamEnded) {
       sendToClient(clientWs, { type: 'input_audio_buffer.speech_stopped' });
       broadcast.toAll({ type: 'vad.speech_stopped' });
+      broadcast.toAll({ type: 'transcript.user.done' });
     }
     if (content.turnComplete) {
-      broadcast.toAll({ type: 'transcript.done', transcript: '' });
+      broadcast.toAll({ type: 'transcript.ai.done' });
       broadcast.toAll({ type: 'ai.done' });
     }
   }
@@ -190,6 +203,11 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
           audio: {
             input: {
               format: { type: 'audio/pcm', rate: 24000 },
+              transcription: {
+                model: 'gpt-4o-mini-transcribe',
+                language: 'zh',
+                prompt: '請使用臺灣繁體中文（zh-TW）逐字轉寫，避免簡體字與中國大陸用語。',
+              },
               turn_detection: {
                 type: 'server_vad',
                 threshold: 0.5,

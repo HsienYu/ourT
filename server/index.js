@@ -376,6 +376,12 @@ const broadcast = {
       if (meta.role === 'monitor' && ws.readyState === WebSocket.OPEN) ws.send(msg);
     }
   },
+  toMain(event) {
+    const msg = JSON.stringify(event);
+    for (const [ws, meta] of busClients) {
+      if (meta.role === 'main' && ws.readyState === WebSocket.OPEN) ws.send(msg);
+    }
+  },
 };
 
 // Inject broadcast bus into song queue
@@ -405,6 +411,10 @@ wssBus.on('connection', (ws, req) => {
     // Operator switches projection mode (ai / ktv)
     if (msg.type === 'projection.mode') {
       broadcast.toProjection({ type: 'projection.mode', mode: msg.mode });
+    }
+
+    if (msg.type === 'projection.fullscreen') {
+      broadcast.toMain({ type: 'projection.fullscreen' });
     }
 
     // Operator triggers KTV AI analysis

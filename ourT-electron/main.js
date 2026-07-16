@@ -266,12 +266,7 @@ function createTray() {
     },
     {
       label: '切換投影全螢幕',
-      click: () => {
-        if (projectionWin && !projectionWin.isDestroyed()) {
-          const isFull = projectionWin.isFullScreen();
-          projectionWin.setFullScreen(!isFull);
-        }
-      },
+      click: () => toggleProjectionFullscreen(),
     },
     { type: 'separator' },
     {
@@ -316,11 +311,7 @@ function connectBus() {
       return;
     }
     if (msg.type === 'projection.fullscreen') {
-      if (projectionWin && !projectionWin.isDestroyed()) {
-        const isFull = projectionWin.isFullScreen();
-        projectionWin.setFullScreen(!isFull);
-        console.log(`[main] projection fullscreen → ${!isFull}`);
-      }
+      toggleProjectionFullscreen();
     }
   };
 
