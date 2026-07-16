@@ -2,6 +2,7 @@
   "name": "ourt",
   "version": "1.0.0",
   "description": "ourT Theatre Performance App",
+  "author": "ourT",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -31,7 +32,6 @@
     },
     "dmg": {
       "title": "ourT",
-      "background": "assets/dmg-background.png",
       "window": {
         "width": 540,
         "height": 380
@@ -43,7 +43,10 @@
         "to": "server",
         "filter": [
           "**/*",
-          "!node_modules"
+          "!node_modules",
+          "!settings.json",
+          "!.env",
+          "!*.env"
         ]
       },
       {

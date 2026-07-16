@@ -236,9 +236,59 @@ correctly through the real `/api/presets` endpoints end-to-end.
   `provider-catalog.test.js` — 28 tests, all passing
 - [done] `tests/manual/app1-realtime.md` extended: live parameter update
   (both providers), presets, voice/model catalog accuracy, interrupt/barge-in
-  (both providers), kiosk fullscreen + window layout
+  (both providers), fullscreen + window layout
 - [todo] Live rehearsal re-verification of all of the above against real
   OpenAI and Gemini sessions, with evidence recorded
 - [todo] `conversation.item.truncate` on interrupt (deferred — keeps OpenAI's
   server-side conversation history precisely in sync with what was actually
   heard; not required for interrupt to work or sound correct live)
+
+## Phase 9 — First Electron `.dmg` Build [done]
+
+Produced the first working `ourT.dmg` build and fixed everything the build
+process itself surfaced.
+
+- [done] Fixed the build failing outright: `assets/dmg-background.png` was
+  referenced in `ourT-electron/package.json` but never existed. Removed the
+  reference (no design asset to fabricate) rather than leaving a broken
+  config; the DMG now uses electron-builder's default window styling. Added
+  the missing `author` field to clear a separate warning. `assets/icon.icns`
+  is still unset (falls back to the default Electron icon) — documented in
+  the README as a follow-up if custom branding is wanted later.
+- [done] **Critical fix — secret exposure in build output:** the
+  `extraResources` copy step bundled `server/settings.json`, including the
+  real OpenAI/Gemini/Anthropic/Groq API keys from local dev, directly into
+  the packaged `.app`/`.dmg`. Caught before any `git add`/commit or
+  distribution — confirmed via `git status` that `ourT-electron/dist/` was
+  still untracked, and there was also no `.gitignore` entry for it (`dist/`
+  would have been committed and pushed on the next `git add -A`). Fixed by:
+  (1) excluding `settings.json`/`.env` from the `extraResources` filter,
+  which is also the functionally correct behavior — each install should
+  populate its own `~/Library/Application Support/ourt/settings.json` on
+  first launch, never ship the developer's own keys; (2) adding
+  `ourT-electron/dist/` to `.gitignore`. Deleted the leaked build output and
+  rebuilt clean; verified with a grep for the actual key string and a check
+  for `settings.json` anywhere under the rebuilt `dist/` — both confirmed
+  absent.
+- [done] Verified the rebuilt `.app` actually launches and works: spawned it
+  directly (not just `npm start`), confirmed the server starts, all four bus
+  roles (main/monitor/control/projection) connect, and weather fetches
+  succeed — then confirmed the separate, pre-existing, legitimate
+  `~/Library/Application Support/ourt/settings.json` (the developer's own,
+  from prior local sessions) is correctly outside both the repo and the
+  built bundle.
+- [done] Produced both `ourT-1.0.0-arm64.dmg` (Apple Silicon) and
+  `ourT-1.0.0.dmg` (Intel), ~96–112 MB each, ad-hoc signed (no Developer ID
+  configured), not notarized.
+- [done] README.md updated: accurate Electron build instructions (output
+  files, ad-hoc signing/Gatekeeper note, transient codesign-timestamp retry
+  note, missing icon/background note), a settings-exclusion security note,
+  refreshed AI Character section (both providers, live parameter behavior
+  differences, presets, barge-in), corrected OpenAI voice table (was still
+  the pre-Gemini 6-voice list), new Automated Tests section, updated
+  Troubleshooting and Project Structure.
+- [todo] Design real `assets/icon.icns` and a DMG background if custom
+  branding is wanted before the actual performance run
+- [todo] Apple Developer ID signing + notarization if the app needs to be
+  distributed to a machine that isn't this development Mac (currently
+  Gatekeeper requires a manual right-click-Open bypass)

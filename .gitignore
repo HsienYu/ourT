@@ -6,6 +6,10 @@ server/settings.json
 .env
 *.env
 
+# electron-builder output — the extraResources build step copies
+# server/settings.json (API keys) into these bundles. Never commit them.
+ourT-electron/dist/
+
 # Song media (add your own files, don't commit large binaries)
 songs/audio/
 songs/covers/
