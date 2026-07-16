@@ -192,6 +192,45 @@
     font-family: monospace; font-size: 11px; padding: 7px; outline: none;
   }
   .settings-status { color: var(--muted); font-size: 10px; margin-top: 8px; }
+
+  /* ── AI state badge ── */
+  #ai-state-badge {
+    font-size: 10px; letter-spacing: 1px; padding: 3px 8px;
+    border: 1px solid transparent; border-radius: 2px;
+    display: none;
+  }
+  #ai-state-badge.thinking { display: inline; border-color: var(--warn); color: var(--warn); }
+  #ai-state-badge.speaking { display: inline; border-color: var(--accent); color: var(--accent); }
+
+  /* ── Audio monitor ── */
+  .audio-monitor {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    background: #000;
+    border: 1px solid var(--border);
+  }
+  .audio-monitor.active { display: flex; }
+  .audio-monitor-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .audio-track {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .audio-track-label {
+    font-size: 9px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .audio-track-label span { font-size: 9px; }
+  canvas.meter {
+    width: 100%; height: 40px;
+    display: block;
+    border: 1px solid #1a1a1a;
+    background: #000;
+  }
 </style>
 </head>
 <body>
@@ -200,6 +239,7 @@
   <h1>ourT Control</h1>
   <span class="conn-badge" id="conn-badge">未連線</span>
   <span class="conn-badge" id="realtime-badge">AI 未開始</span>
+  <span id="ai-state-badge"></span>
 </header>
 
 <div class="page">
@@ -320,6 +360,24 @@
     </div>
     <div class="btn-row">
       <button class="btn" onclick="clearTranscript()">清除投影文字</button>
+    </div>
+
+    <!-- ── Audio monitor ── -->
+    <div class="audio-monitor" id="audio-monitor">
+      <div class="audio-monitor-row">
+        <div class="audio-track">
+          <div class="audio-track-label">
+            INPUT / 輸入 <span id="input-db">—</span>
+          </div>
+          <canvas class="meter" id="input-meter" width="200" height="40"></canvas>
+        </div>
+        <div class="audio-track">
+          <div class="audio-track-label">
+            OUTPUT / 輸出 <span id="output-db">—</span>
+          </div>
+          <canvas class="meter" id="output-meter" width="200" height="40"></canvas>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -496,6 +554,26 @@ function handleBusMessage(msg) {
     case 'bus.welcome':
       log(`角色：${msg.role}`);
       break;
+    // VAD — covers both OpenAI and Gemini (Gemini fires these on the bus)
+    case 'vad.speech_started':
+      setMicLive(true);
+      break;
+    case 'vad.speech_stopped':
+      setMicLive(false);
+      break;
+    // AI lifecycle — drive the state badge
+    case 'ai.thinking':
+      setAiStateBadge('thinking');
+      break;
+    case 'ai.done':
+      setAiStateBadge('idle');
+      break;
+    case 'transcript.delta':
+      setAiStateBadge('speaking');
+      break;
+    case 'transcript.done':
+      setAiStateBadge('idle');
+      break;
   }
 }
 
@@ -511,72 +589,98 @@ let audioContext = null;
 let mediaStream = null;
 let audioWorkletNode = null;
 
-async function startSession() {
-  if (realtimeWs && realtimeWs.readyState === WebSocket.OPEN) {
-    log('已有活躍 session，先關閉舊的');
+function startSession() {
+  // Always stop mic capture immediately
+  stopAudioCapture();
+
+  function doConnect() {
+    // Request mic then open the proxy WebSocket
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      .then((stream) => {
+        mediaStream = stream;
+
+        const wsUrl = `ws://${location.host}/ws/realtime`;
+        realtimeWs = new WebSocket(wsUrl);
+
+        realtimeWs.onopen = () => {
+          log('Realtime WS 已連線，啟動 session');
+          realtimeWs.send(JSON.stringify({
+            type: 'session.start',
+            config: buildSessionPayload(),
+          }));
+          state.sessionActive = true;
+          startAudioCapture();
+        };
+
+        realtimeWs.onmessage = (e) => {
+          let msg;
+          try { msg = JSON.parse(e.data); } catch { return; }
+          switch (msg.type) {
+            case 'proxy.connected':
+              log(`${msg.provider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'} 已連線`);
+              setRealtimeBadge('', '連線中…');
+              break;
+            case 'session.created':
+              log('session 已建立');
+              setRealtimeBadge('active', '◉ 通話中');
+              pushMonitorParams();
+              break;
+            case 'proxy.disconnected':
+              log(`${msg.provider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'} 斷線`);
+              setRealtimeBadge('error', 'AI 斷線');
+              stopAudioCapture();
+              setAiStateBadge('idle');
+              break;
+            case 'proxy.error':
+              log('錯誤：' + msg.message);
+              setRealtimeBadge('error', '錯誤');
+              break;
+            case 'error':
+              log('Realtime 錯誤：' + (msg.error?.message || JSON.stringify(msg.error)));
+              break;
+            // VAD from OpenAI (direct); Gemini VAD comes via bus
+            case 'input_audio_buffer.speech_started':
+              setMicLive(true);
+              break;
+            case 'input_audio_buffer.speech_stopped':
+              setMicLive(false);
+              break;
+            // Output audio for metering (Option A — decode in browser)
+            case 'response.audio.delta':
+              if (msg.delta) feedOutputMeter(msg.delta);
+              break;
+            default:
+              // Gemini: serverContent.modelTurn.parts[].inlineData.data
+              if (msg.serverContent?.modelTurn?.parts) {
+                for (const part of msg.serverContent.modelTurn.parts) {
+                  if (part.inlineData?.data) feedOutputMeter(part.inlineData.data);
+                }
+              }
+          }
+        };
+
+        realtimeWs.onclose = () => {
+          log('Realtime WS 關閉');
+          state.sessionActive = false;
+          stopAudioCapture();
+          setAiStateBadge('idle');
+          setMonitorActive(false);
+        };
+      })
+      .catch((err) => {
+        log('麥克風存取失敗：' + err.message);
+      });
+  }
+
+  // Wait for old socket to fully close before opening a new one
+  if (realtimeWs && realtimeWs.readyState !== WebSocket.CLOSED) {
+    log('關閉舊 session…');
+    realtimeWs.onclose = () => { realtimeWs = null; doConnect(); };
     realtimeWs.close();
+  } else {
+    realtimeWs = null;
+    doConnect();
   }
-
-  // Request mic
-  try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  } catch (err) {
-    log('麥克風存取失敗：' + err.message);
-    return;
-  }
-
-  const wsUrl = `ws://${location.host}/ws/realtime`;
-  realtimeWs = new WebSocket(wsUrl);
-
-  realtimeWs.onopen = () => {
-    log('Realtime WS 已連線，啟動 session');
-    realtimeWs.send(JSON.stringify({
-      type: 'session.start',
-      config: buildSessionPayload(),
-    }));
-    state.sessionActive = true;
-    startAudioCapture();
-  };
-
-  realtimeWs.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    switch (msg.type) {
-        case 'proxy.connected':
-          log(`${msg.provider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'} 已連線`);
-        setRealtimeBadge('', '連線中…');
-        break;
-      case 'session.created':
-        log('session 已建立');
-        setRealtimeBadge('active', '◉ 通話中');
-        pushMonitorParams();
-        break;
-        case 'proxy.disconnected':
-          log(`${msg.provider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'} 斷線`);
-        setRealtimeBadge('error', 'AI 斷線');
-        stopAudioCapture();
-        break;
-      case 'proxy.error':
-        log('錯誤：' + msg.message);
-        setRealtimeBadge('error', '錯誤');
-        break;
-        case 'error':
-          log('Realtime 錯誤：' + (msg.error?.message || JSON.stringify(msg.error)));
-        break;
-      // VAD events from OpenAI — drive mic indicator
-      case 'input_audio_buffer.speech_started':
-        setMicLive(true);
-        break;
-      case 'input_audio_buffer.speech_stopped':
-        setMicLive(false);
-        break;
-    }
-  };
-
-  realtimeWs.onclose = () => {
-    log('Realtime WS 關閉');
-    state.sessionActive = false;
-    stopAudioCapture();
-  };
 }
 
 async function startAudioCapture() {
@@ -587,16 +691,20 @@ async function startAudioCapture() {
   audioWorkletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
 
   audioWorkletNode.port.onmessage = (e) => {
+    // Forward to proxy
     if (realtimeWs && realtimeWs.readyState === WebSocket.OPEN) {
       realtimeWs.send(JSON.stringify({
         type: 'input_audio_buffer.append',
         audio: e.data, // base64 PCM16
       }));
     }
+    // Feed input meter
+    feedInputMeter(e.data);
   };
 
   source.connect(audioWorkletNode);
   audioWorkletNode.connect(audioContext.destination);
+  setMonitorActive(true);
   log('麥克風擷取啟動（24 kHz PCM16）');
 }
 
@@ -604,6 +712,7 @@ function stopAudioCapture() {
   if (audioWorkletNode) { audioWorkletNode.disconnect(); audioWorkletNode = null; }
   if (audioContext) { audioContext.close(); audioContext = null; }
   if (mediaStream) { mediaStream.getTracks().forEach((t) => t.stop()); mediaStream = null; }
+  setMonitorActive(false);
 }
 
 function pushSessionUpdate() {
@@ -1089,6 +1198,21 @@ function setRealtimeBadge(cls, text) {
   el.textContent = text;
 }
 
+// ── AI state badge ────────────────────────────────────────────────────────────
+function setAiStateBadge(state) {
+  const el = document.getElementById('ai-state-badge');
+  if (state === 'thinking') {
+    el.className = 'thinking';
+    el.textContent = '思考中…';
+  } else if (state === 'speaking') {
+    el.className = 'speaking';
+    el.textContent = '◎ 說話中';
+  } else {
+    el.className = '';
+    el.textContent = '';
+  }
+}
+
 // ── Mic live indicator ────────────────────────────────────────────────────────
 function setMicLive(live) {
   const dot   = document.getElementById('mic-live-dot');
@@ -1096,6 +1220,106 @@ function setMicLive(live) {
   if (!dot) return;
   dot.className   = live ? 'live' : '';
   label.textContent = live ? '● MIC LIVE' : '待機';
+}
+
+// ── Audio monitor ─────────────────────────────────────────────────────────────
+// Circular buffer of RMS values (one per chunk) for scrolling bar graph
+const METER_BARS   = 60;  // number of bars displayed across the canvas
+const inputBuf     = new Float32Array(METER_BARS);
+const outputBuf    = new Float32Array(METER_BARS);
+let   inputBufIdx  = 0;
+let   outputBufIdx = 0;
+let   meterRaf     = null;
+
+function setMonitorActive(active) {
+  document.getElementById('audio-monitor').classList.toggle('active', active);
+  if (active && !meterRaf) {
+    meterRaf = requestAnimationFrame(drawMeters);
+  } else if (!active && meterRaf) {
+    cancelAnimationFrame(meterRaf);
+    meterRaf = null;
+    // Clear canvases
+    clearCanvas('input-meter');
+    clearCanvas('output-meter');
+    document.getElementById('input-db').textContent  = '—';
+    document.getElementById('output-db').textContent = '—';
+  }
+}
+
+function clearCanvas(id) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+
+/**
+ * Compute RMS from a base64-encoded PCM16 (little-endian signed 16-bit) string.
+ */
+function rmsFromBase64Pcm16(b64) {
+  try {
+    const binary = atob(b64);
+    const bytes  = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const samples = new Int16Array(bytes.buffer);
+    if (samples.length === 0) return 0;
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) sum += (samples[i] / 32768) ** 2;
+    return Math.sqrt(sum / samples.length);
+  } catch {
+    return 0;
+  }
+}
+
+function feedInputMeter(b64) {
+  inputBuf[inputBufIdx % METER_BARS] = rmsFromBase64Pcm16(b64);
+  inputBufIdx++;
+}
+
+function feedOutputMeter(b64) {
+  outputBuf[outputBufIdx % METER_BARS] = rmsFromBase64Pcm16(b64);
+  outputBufIdx++;
+}
+
+function drawMeter(canvasId, buf, idx, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return 0;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const barW    = Math.max(1, Math.floor(W / METER_BARS) - 1);
+  const spacing = Math.floor(W / METER_BARS);
+  let   peak    = 0;
+
+  for (let i = 0; i < METER_BARS; i++) {
+    // Draw oldest → newest left → right
+    const bufI = (idx + i) % METER_BARS;
+    const rms  = buf[bufI];
+    if (rms > peak) peak = rms;
+
+    // Height: 80% of canvas max, with a minimum visible bar of 1px
+    const barH = Math.max(1, Math.round(rms * H * 0.85));
+    const x    = i * spacing;
+    const y    = H - barH;
+
+    // Fade older bars slightly
+    const alpha = 0.4 + 0.6 * (i / METER_BARS);
+    ctx.fillStyle = color.replace(')', `, ${alpha.toFixed(2)})`).replace('rgb', 'rgba');
+    ctx.fillRect(x, y, barW, barH);
+  }
+  return peak;
+}
+
+function drawMeters() {
+  const inPeak  = drawMeter('input-meter',  inputBuf,  inputBufIdx,  'rgb(68, 255, 170)');  // --ok
+  const outPeak = drawMeter('output-meter', outputBuf, outputBufIdx, 'rgb(224, 208, 255)'); // --accent
+
+  // dBFS labels
+  const toDb = (rms) => rms > 0.0001 ? (20 * Math.log10(rms)).toFixed(1) + ' dB' : '—';
+  document.getElementById('input-db').textContent  = toDb(inPeak);
+  document.getElementById('output-db').textContent = toDb(outPeak);
+
+  if (meterRaf !== null) meterRaf = requestAnimationFrame(drawMeters);
 }
 
 // ── Lyric style toggle ────────────────────────────────────────────────────────

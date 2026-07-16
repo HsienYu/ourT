@@ -67,9 +67,10 @@ function sendToClient(clientWs, event) {
 }
 
 function handleRealtimeClient(clientWs, broadcast, apiKeys) {
-  let providerWs = null;
+  let providerWs   = null;
   let activeProvider = 'openai';
-  let sessionConfig = {};
+  let sessionConfig  = {};
+  let geminiReady    = false; // true after setupComplete received
 
   function handleOpenAIEvent(message) {
     if (message.type === 'response.audio_transcript.delta') {
@@ -127,6 +128,14 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
         return;
       }
 
+      // Gemini: setupComplete unlocks audio forwarding and signals session ready
+      if (provider === 'gemini' && message.setupComplete) {
+        geminiReady = true;
+        console.log('[realtime-proxy] Gemini setupComplete — session ready');
+        sendToClient(clientWs, { type: 'session.created', provider: 'gemini' });
+        return; // don't forward setupComplete itself to the browser
+      }
+
       sendToClient(clientWs, message);
       if (provider === 'openai') handleOpenAIEvent(message);
       else handleGeminiEvent(message);
@@ -176,6 +185,7 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
   }
 
   function connectToGemini() {
+    geminiReady = false;
     const ws = new WebSocket(`${GEMINI_LIVE_URL}?key=${encodeURIComponent(apiKeys.gemini)}`);
     providerWs = ws;
     attachProviderHandlers(ws, 'gemini');
@@ -186,8 +196,8 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
         voiceName: sessionConfig.voice,
         modelName: apiKeys.geminiLive,
       })));
+      // session.created is sent later, when setupComplete arrives
       sendToClient(clientWs, { type: 'proxy.connected', provider: 'gemini' });
-      sendToClient(clientWs, { type: 'session.created' });
     });
   }
 
@@ -205,8 +215,9 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
     }
 
     if (message.type === 'session.start') {
-      sessionConfig = message.config || {};
+      sessionConfig  = message.config || {};
       activeProvider = sessionConfig.provider || 'openai';
+      geminiReady    = false;
       const key = activeProvider === 'gemini' ? apiKeys.gemini : apiKeys.openai;
       if (!key) {
         sendToClient(clientWs, {
@@ -236,6 +247,7 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
       if (activeProvider === 'openai') {
         providerWs.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: message.audio }));
       } else {
+        if (!geminiReady) return; // drop until setupComplete
         const pcm24k = Buffer.from(message.audio, 'base64');
         const pcm16k = downsample24to16(pcm24k);
         providerWs.send(JSON.stringify({
