@@ -5,7 +5,7 @@ Record results and evidence in the Evidence column.
 
 ## Setup
 
-- [ ] `server/.env` or the control-panel settings has a valid OpenAI or Gemini API key
+- [ ] `/control` → `系統設定` has a valid OpenAI or Gemini API key and the intended audio devices selected
 - [ ] Node.js server started: `cd server && npm start`
 - [ ] Operator panel opened on mobile/tablet: `http://[mac-ip]:3000/control`
 - [ ] Projection screen opened full-screen: `http://[mac-ip]:3000/projection`
@@ -76,8 +76,14 @@ Record results and evidence in the Evidence column.
 | Check | Expected | Evidence |
 |---|---|---|
 | Open `系統設定` in `/control` | Existing API keys remain masked | |
+| Tap `測試麥克風` with no active session | INPUT graph moves while speaking; status says `AudioWorklet 已接收麥克風 PCM 資料` | |
+| Tap `測試輸出` | A 440 Hz tone is audible from selected/system output | |
 | Select Gemini Live, save, then start a fresh session | Gemini connects and the mic/VAD flow works | |
 | Select OpenAI, save, then start a fresh session | OpenAI connects and the mic/VAD flow works | |
+| Select intended audio input/output, save, then start a fresh session | Controls report the selected device; selection applies to the new session | |
+| Speak at normal volume | INPUT meter moves and shows a non-empty dB value | |
+| Wait for the AI response | OUTPUT meter moves and AI speech is audible from the selected/system output | |
+| Watch the audio status line during a session | It progresses through `輸入擷取中` → `提供者已就緒` → `麥克風音訊已傳送` → `AI 音訊播放中` | |
 
 ---
 

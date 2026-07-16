@@ -10,7 +10,7 @@ Record results and evidence in the Evidence column.
 - [ ] Projection screen open: `http://[mac-ip]:3000/projection`
 - [ ] Operator panel open: `http://[mac-ip]:3000/control`
 - [ ] Audience page open on a phone: `http://[mac-ip]:3000/audience`
-- [ ] `ANTHROPIC_API_KEY` set in `.env`
+- [ ] A text-generation provider key is configured in `/control` → `系統設定`
 
 ---
 
@@ -71,11 +71,11 @@ Record results and evidence in the Evidence column.
 
 ---
 
-## 6. Auto-Rewrite on Enqueue (`KTV_AUTO_REWRITE=true`)
+## 6. Auto-Rewrite on Enqueue
 
 | Check | Expected | Evidence |
 |---|---|---|
-| Set `KTV_AUTO_REWRITE=true` in `.env`, restart server | | |
+| Enable KTV 自動改寫 in `/control` → `系統設定` | | |
 | Request a song from audience phone | Server log: `[lyrics] Generated variant 'gender-swap' for song '…'` | |
 | Tap 播放下一首 | Modified lyrics already loaded; no delay | |
 | If generation still in progress when song starts | Original lyrics shown first, then auto-swap when ready | |

@@ -25,18 +25,17 @@
 
 'use strict';
 
-require('dotenv').config();
-
 const fs   = require('fs');
 const path = require('path');
+const { getApiKey } = require('../lib/settings');
 
 const SONGS_DIR  = path.join(__dirname, '../../songs');
 const LYRICS_DIR = path.join(SONGS_DIR, 'lyrics');
 const CATALOG    = path.join(SONGS_DIR, 'index.json');
 
-const CLAUDE_API_KEY = process.env.ANTHROPIC_API_KEY;
+const CLAUDE_API_KEY = getApiKey('anthropic');
 if (!CLAUDE_API_KEY) {
-  console.error('ERROR: ANTHROPIC_API_KEY not set in .env');
+  console.error('ERROR: Anthropic API key not set in the ourT Settings panel');
   process.exit(1);
 }
 

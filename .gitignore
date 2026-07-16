@@ -23,3 +23,4 @@ app2-yolo/**/__pycache__/
 
 # macOS
 .DS_Store
+.playwright-mcp/

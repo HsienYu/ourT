@@ -14,12 +14,7 @@ echo "  ourT — Development Launcher"
 echo "  ────────────────────────────────────"
 
 # ── Node.js server ────────────────────────────────────────────────────────────
-if [ ! -f "$SCRIPT_DIR/server/.env" ]; then
-  echo ""
-  echo "  WARNING: server/.env not found."
-  echo "  Copy server/.env.example to server/.env and add your API keys."
-  echo ""
-fi
+echo "  Configure API keys and providers in http://localhost:3000/control"
 
 echo "  Starting Node.js server (port 3000)…"
 cd "$SCRIPT_DIR/server"

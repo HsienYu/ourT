@@ -12,7 +12,7 @@
  */
 
 const {
-  app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain,
+  app, BrowserWindow, Tray, Menu, nativeImage, ipcMain,
 } = require('electron');
 const { fork }  = require('child_process');
 const path      = require('path');
@@ -29,10 +29,10 @@ const SERVER_DIR  = IS_PACKAGED
   : path.join(__dirname, '../server');
 const SERVER_ENTRY = path.join(SERVER_DIR, 'index.js');
 
-// User config lives in ~/Library/Application Support/ourT/.env
+// User config has one canonical location in Application Support.
 const USER_DATA   = app.getPath('userData');
-const ENV_PATH    = path.join(USER_DATA, '.env');
-const ENV_EXAMPLE = path.join(SERVER_DIR, '.env.example');
+const SETTINGS_PATH = path.join(USER_DATA, 'settings.json');
+const LEGACY_ENV_PATH = path.join(USER_DATA, '.env');
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let serverProcess  = null;
@@ -44,7 +44,7 @@ let controlWin     = null;
 
 // ── App ready ──────────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
-  ensureEnvFile();
+  ensureSettingsDirectory();
   await startServer();
   openWindows();
   connectBus();
@@ -63,27 +63,9 @@ app.on('activate', () => {
   if (!projectionWin || projectionWin.isDestroyed()) openWindows();
 });
 
-// ── .env file setup ────────────────────────────────────────────────────────────
-function ensureEnvFile() {
+// ── Canonical settings setup ───────────────────────────────────────────────────
+function ensureSettingsDirectory() {
   if (!fs.existsSync(USER_DATA)) fs.mkdirSync(USER_DATA, { recursive: true });
-
-  if (!fs.existsSync(ENV_PATH)) {
-    // Copy .env.example as a starting point
-    if (fs.existsSync(ENV_EXAMPLE)) {
-      fs.copyFileSync(ENV_EXAMPLE, ENV_PATH);
-    } else {
-      fs.writeFileSync(ENV_PATH,
-        '# ourT configuration\nOPENAI_API_KEY=\nANTHROPIC_API_KEY=\nPORT=3000\n', 'utf8');
-    }
-    dialog.showMessageBoxSync({
-      type: 'info',
-      title: 'ourT — 首次設定',
-      message: '請設定 API 金鑰',
-      detail: `在以下位置填入 OPENAI_API_KEY 和 ANTHROPIC_API_KEY 後重新啟動：\n\n${ENV_PATH}`,
-      buttons: ['開啟設定檔', '稍後設定'],
-    });
-    shell.openPath(ENV_PATH);
-  }
 }
 
 // ── Server start ───────────────────────────────────────────────────────────────
@@ -93,7 +75,9 @@ function startServer() {
       cwd: SERVER_DIR,
       env: {
         ...process.env,
-        DOTENV_CONFIG_PATH: ENV_PATH,  // tell dotenv where to look
+        OURT_SETTINGS_PATH: SETTINGS_PATH,
+        OURT_LEGACY_SETTINGS_PATH: path.join(SERVER_DIR, 'settings.json'),
+        OURT_LEGACY_ENV_PATH: LEGACY_ENV_PATH,
         NODE_ENV: 'production',
       },
       silent: true,  // capture stdout/stderr
@@ -155,6 +139,19 @@ function toggleProjectionFullscreen() {
 
 function base(url) {
   return `http://localhost:${serverPort}${url}`;
+}
+
+function openControlSettings() {
+  const settingsUrl = base('/control?settings=1');
+  if (!controlWin || controlWin.isDestroyed()) {
+    controlWin = createWindow({ title: 'ourT — Control', width: 420, height: 900 });
+    controlWin.loadURL(settingsUrl);
+    controlWin.on('closed', () => { controlWin = null; });
+  } else {
+    controlWin.loadURL(settingsUrl);
+    controlWin.show();
+    controlWin.focus();
+  }
 }
 
 function openWindows() {
@@ -264,8 +261,8 @@ function createTray() {
       },
     },
     {
-      label: '開啟設定檔',
-      click: () => shell.openPath(ENV_PATH),
+      label: '開啟系統設定',
+      click: () => openControlSettings(),
     },
     {
       label: '切換投影全螢幕',

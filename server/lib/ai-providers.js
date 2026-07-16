@@ -12,6 +12,8 @@
 
 const { getApiKey } = require('./settings');
 
+const ZH_TW_LANGUAGE_RULE = '一律使用臺灣繁體中文（zh-TW），避免簡體字與中國大陸用語。';
+
 /**
  * Make a call to Anthropic Claude Messages API.
  * @param {object} opts
@@ -23,7 +25,7 @@ const { getApiKey } = require('./settings');
  */
 async function callClaude({ system, prompt, model, maxTokens = 2048 }) {
   const apiKey = require('./settings').getApiKey('anthropic');
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
+  if (!apiKey) throw new Error('Anthropic API key not configured in ourT Settings');
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -172,7 +174,7 @@ async function callMistral({ system, prompt, model, maxTokens = 2048 }) {
  */
 async function callOpenAI({ system, prompt, model, maxTokens = 2048 }) {
   const apiKey = require('./settings').getApiKey('openai');
-  if (!apiKey) throw new Error('OPENAI_API_KEY not set');
+  if (!apiKey) throw new Error('OpenAI API key not configured in ourT Settings');
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -212,6 +214,7 @@ async function callOpenAI({ system, prompt, model, maxTokens = 2048 }) {
  */
 async function generateText({ task, system, prompt, options = {} }) {
   const settings = require('./settings').getSettings(false);
+  const localizedSystem = `${system}\n\n${ZH_TW_LANGUAGE_RULE}`;
 
   // Determine provider for this task
   const taskProviderMap = {
@@ -246,19 +249,19 @@ async function generateText({ task, system, prompt, options = {} }) {
 
       switch (provider) {
         case 'claude':
-          text = await callClaude({ system, prompt, model: modelName, maxTokens });
+          text = await callClaude({ system: localizedSystem, prompt, model: modelName, maxTokens });
           break;
         case 'gemini':
-          text = await callGemini({ system, prompt, model: modelName, maxTokens });
+          text = await callGemini({ system: localizedSystem, prompt, model: modelName, maxTokens });
           break;
         case 'groq':
-          text = await callGroq({ system, prompt, model: modelName, maxTokens });
+          text = await callGroq({ system: localizedSystem, prompt, model: modelName, maxTokens });
           break;
         case 'mistral':
-          text = await callMistral({ system, prompt, model: modelName, maxTokens });
+          text = await callMistral({ system: localizedSystem, prompt, model: modelName, maxTokens });
           break;
         case 'openai':
-          text = await callOpenAI({ system, prompt, model: modelName, maxTokens });
+          text = await callOpenAI({ system: localizedSystem, prompt, model: modelName, maxTokens });
           break;
         default:
           throw new Error(`Unknown provider: ${provider}`);

@@ -29,7 +29,7 @@ TDD not required. Manual verification protocols required before each rehearsal.
   - Weather widget
   - Status log
 - [done] server/public/control/pcm-processor.js: AudioWorklet PCM16 mic processor
-- [done] server/.env.example
+- [done] Canonical settings stored in user-writable settings.json
 
 ## Phase 2 — App 1 + App 3: Projection Screen [done]
 - [done] server/public/projection/index.html: shared projection screen
@@ -100,14 +100,14 @@ TDD not required. Manual verification protocols required before each rehearsal.
 - [done] KTV: song progress bar
 - [done] KTV: blurred cover art background (::before pseudo-element)
 - [done] LLM lyrics: RAG context loader (server/rag/ directory)
-- [done] LLM lyrics: auto-rewrite on enqueue (KTV_AUTO_REWRITE=true in .env)
+- [done] LLM lyrics: auto-rewrite on enqueue (configured in Control settings)
 - [done] ktv.lyrics.override broadcast extended with variant field
 - [done] app2-yolo/app.py: embedded FastAPI server in background thread
 - [done] app2-yolo/setup.py: py2app bundle configuration
 - [done] ourT-electron/: Electron bundle (main.js + package.json)
   - Forks Node.js server, opens 3 windows (projection/monitor/control) automatically
-  - System tray: open/reopen windows, copy audience URL, open .env, quit
-  - API keys from ~/Library/Application Support/ourT/.env
+  - System tray: open/reopen windows, copy audience URL, open Control settings, quit
+  - API keys and runtime configuration from ~/Library/Application Support/ourT/settings.json
 - [done] server/scripts/import-song.js: yt-dlp + Whisper song import CLI
 - [done] start.sh: development launcher
 - [done] tests/manual/app1-realtime.md
@@ -115,7 +115,7 @@ TDD not required. Manual verification protocols required before each rehearsal.
 - [done] tests/manual/app3-ktv.md
 - [done] README.md: complete setup, startup, troubleshooting, pre-performance checklist
 - [done] Electron app tested: npm install, npm start — server starts, all 3 windows (control/monitor/projection) connect to bus, weather fetched live
-  - Fixed: dotenv path forwarded via DOTENV_CONFIG_PATH env var; server reads it with dotenv.config({ path })
+  - Settings are passed to the server via `OURT_SETTINGS_PATH`; legacy `.env` is imported once only
   - Fixed: tray-icon.png created (16x16 white PNG); Electron no longer crashes on missing asset
 - [todo] Soak test: all apps running simultaneously for 2+ hours (needs hardware)
 - [todo] Add real songs to catalog + run generate-lyrics.js
@@ -123,8 +123,9 @@ TDD not required. Manual verification protocols required before each rehearsal.
 
 ## Phase 7 — Multi-Provider Realtime and Settings [active]
 
-The server now has OpenAI Realtime and Gemini Live bridge implementations, masked runtime settings APIs, and an operator settings panel. Static checks and a local `GET /api/settings` check pass; live provider verification has not been performed.
+The server now has OpenAI Realtime and Gemini Live bridge implementations, masked runtime settings APIs, an operator settings panel, and input/output audio diagnostics. Electron uses `~/Library/Application Support/ourt/settings.json` as the sole runtime configuration source; legacy `server/settings.json` values and `.env` keys are imported once only when that JSON file does not exist. Static checks pass; live provider verification has not been performed.
 
 - [todo] Manual verify an OpenAI Realtime session using `tests/manual/app1-realtime.md`
 - [todo] Manual verify a Gemini Live session using `tests/manual/app1-realtime.md`
+- [todo] Verify selected microphone/output device, 24kHz input conversion, input/output meters, and speaker playback
 - [todo] Record provider, latency, VAD, transcript, and audio-output evidence from rehearsal

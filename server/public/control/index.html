@@ -378,11 +378,12 @@
           <canvas class="meter" id="output-meter" width="200" height="40"></canvas>
         </div>
       </div>
+      <div id="audio-status" style="font-size:9px;color:var(--muted);">音訊待機</div>
     </div>
   </div>
 
   <!-- ── RUNTIME SETTINGS ── -->
-  <details class="settings">
+  <details class="settings" id="runtime-settings">
     <summary>系統設定 / Providers, KTV, YOLO</summary>
     <div class="settings-grid">
       <label>Realtime 語音提供者
@@ -411,6 +412,17 @@
       </label>
       <label>YOLO 信心閾值<input id="setting-yolo-confidence" type="number" min="0" max="1" step="0.05"></label>
       <label>YOLO 目標 FPS<input id="setting-yolo-fps" type="number" min="1" max="60" step="1"></label>
+      <label class="wide">音訊輸入裝置
+        <select id="setting-audio-input" onchange="onAudioDeviceChange()"><option value="">系統預設麥克風</option></select>
+      </label>
+      <label class="wide">音訊輸出裝置
+        <select id="setting-audio-output" onchange="onAudioDeviceChange()"><option value="">系統預設輸出</option></select>
+      </label>
+      <div class="wide" style="font-size:9px;color:var(--muted);">裝置清單會在授權麥克風後更新；變更於下一次開始連線時套用。</div>
+      <div class="wide btn-row">
+        <button class="btn" type="button" onclick="testMicrophone()">測試麥克風</button>
+        <button class="btn" type="button" onclick="testSpeaker()">測試輸出</button>
+      </div>
       <div class="wide btn-row"><button class="btn primary" type="button" onclick="saveSettings()">儲存系統設定</button></div>
     </div>
     <div class="settings-status" id="settings-status">讀取中⋯</div>
@@ -588,16 +600,31 @@ let realtimeWs = null;
 let audioContext = null;
 let mediaStream = null;
 let audioWorkletNode = null;
+let providerReady = false;
+let workletChunkCount = 0;
 
 function startSession() {
   // Always stop mic capture immediately
   stopAudioCapture();
+  // Create/resume during this click gesture. A context created later in an
+  // async getUserMedia callback can remain suspended in Chromium/Electron.
+  prepareInputAudio();
 
   function doConnect() {
-    // Request mic then open the proxy WebSocket
-    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-      .then((stream) => {
+    // Create/resume output from this user gesture, then request the configured mic.
+    prepareOutputAudio().catch((error) => {
+      setAudioStatus('無法初始化輸出音訊：' + error.message, true);
+    });
+    setAudioStatus('要求麥克風權限…');
+    navigator.mediaDevices.getUserMedia({ audio: audioInputConstraints(), video: false })
+      .then(async (stream) => {
         mediaStream = stream;
+        await refreshAudioDevices();
+        // Start metering immediately. Provider forwarding is gated separately.
+        startAudioCapture().catch((error) => {
+          log('麥克風處理器失敗：' + error.message);
+          setAudioStatus('麥克風處理器失敗：' + error.message, true);
+        });
 
         const wsUrl = `ws://${location.host}/ws/realtime`;
         realtimeWs = new WebSocket(wsUrl);
@@ -609,7 +636,7 @@ function startSession() {
             config: buildSessionPayload(),
           }));
           state.sessionActive = true;
-          // Audio capture starts after proxy.connected (provider WS is open)
+          providerReady = false;
         };
 
         realtimeWs.onmessage = (e) => {
@@ -619,8 +646,18 @@ function startSession() {
             case 'proxy.connected':
               log(`${msg.provider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'} 已連線`);
               setRealtimeBadge('', '連線中…');
-              // Provider WS is now open — safe to start sending audio
-              startAudioCapture();
+              setAudioStatus('提供者連線中，等待工作階段設定…');
+              break;
+            case 'proxy.ready':
+              log(`${msg.provider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'} 工作階段已就緒`);
+              providerReady = true;
+              setAudioStatus('輸入擷取中，提供者已就緒');
+              break;
+            case 'proxy.input_active':
+              setAudioStatus('麥克風音訊已傳送至 ' + (msg.provider === 'gemini' ? 'Gemini Live' : 'OpenAI'));
+              break;
+            case 'proxy.output_active':
+              setAudioStatus('已收到 AI 音訊，準備播放');
               break;
             case 'session.created':
               log('session 已建立');
@@ -649,9 +686,11 @@ function startSession() {
               break;
             // OpenAI output audio — play through speakers + feed meter
             case 'response.audio.delta':
+            case 'response.output_audio.delta':
               if (msg.delta) {
                 playOutputAudio(msg.delta);
                 feedOutputMeter(msg.delta);
+                setAudioStatus('AI 音訊播放中');
               }
               break;
             default:
@@ -661,6 +700,7 @@ function startSession() {
                   if (part.inlineData?.data) {
                     playOutputAudio(part.inlineData.data);
                     feedOutputMeter(part.inlineData.data);
+                    setAudioStatus('AI 音訊播放中');
                   }
                 }
               }
@@ -678,6 +718,7 @@ function startSession() {
       })
       .catch((err) => {
         log('麥克風存取失敗：' + err.message);
+        setAudioStatus('麥克風失敗：' + err.message, true);
       });
   }
 
@@ -688,40 +729,92 @@ function startSession() {
     realtimeWs.close();
   } else {
     realtimeWs = null;
+    providerReady = false;
     doConnect();
   }
 }
 
+function audioInputConstraints() {
+  const deviceId = state.settings?.audio?.inputDeviceId;
+  return deviceId ? { deviceId: { exact: deviceId } } : true;
+}
+
+function prepareInputAudio() {
+  if (!audioContext || audioContext.state === 'closed') {
+    audioContext = new AudioContext();
+    audioContext.onstatechange = () => {
+      setAudioStatus(`輸入 AudioContext：${audioContext?.state || 'closed'}`, audioContext?.state !== 'running');
+    };
+  }
+  if (audioContext.state === 'suspended') {
+    audioContext.resume().catch((error) => {
+      setAudioStatus('無法啟動麥克風 AudioContext：' + error.message, true);
+    });
+  }
+  return audioContext;
+}
+
 async function startAudioCapture() {
-  audioContext = new AudioContext({ sampleRate: 24000 });
-  await audioContext.audioWorklet.addModule('/control/pcm-processor.js');
+  const context = prepareInputAudio();
+  await context.resume();
+  if (context.state !== 'running') throw new Error(`AudioContext 狀態為 ${context.state}`);
+  await audioContext.audioWorklet.addModule('/control/pcm-processor.js?v=pcm-transfer-1');
 
   const source = audioContext.createMediaStreamSource(mediaStream);
   audioWorkletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
 
   audioWorkletNode.port.onmessage = (e) => {
+    const rawChunk = typeof e.data === 'string' ? { audio: e.data } : e.data;
+    const chunk = {
+      ...rawChunk,
+      audio: rawChunk.audio || pcm16BufferToBase64(rawChunk.pcm),
+    };
+    workletChunkCount += 1;
+    if (workletChunkCount === 1) {
+      setAudioStatus('AudioWorklet 已接收麥克風 PCM 資料');
+      log('AudioWorklet 已收到第一個麥克風區塊');
+    }
     // Forward to proxy
-    if (realtimeWs && realtimeWs.readyState === WebSocket.OPEN) {
+    if (providerReady && realtimeWs && realtimeWs.readyState === WebSocket.OPEN) {
       realtimeWs.send(JSON.stringify({
         type: 'input_audio_buffer.append',
-        audio: e.data, // base64 PCM16
+        audio: chunk.audio, // base64 24kHz PCM16
       }));
     }
     // Feed input meter
-    feedInputMeter(e.data);
+    feedInputMeter(chunk.audio, chunk.rms);
+  };
+  audioWorkletNode.onprocessorerror = () => {
+    setAudioStatus('AudioWorklet 處理失敗', true);
+    log('AudioWorklet 處理失敗');
   };
 
   source.connect(audioWorkletNode);
   audioWorkletNode.connect(audioContext.destination);
   setMonitorActive(true);
-  log('麥克風擷取啟動（24 kHz PCM16）');
+  setAudioStatus(`輸入擷取中（${audioContext.sampleRate} Hz → 24000 Hz PCM16）`);
+  log(`麥克風擷取啟動（${audioContext.sampleRate} Hz → 24 kHz PCM16）`);
+}
+
+function pcm16BufferToBase64(buffer) {
+  if (!buffer) return '';
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 8192;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function stopAudioCapture() {
   if (audioWorkletNode) { audioWorkletNode.disconnect(); audioWorkletNode = null; }
   if (audioContext) { audioContext.close(); audioContext = null; }
   if (mediaStream) { mediaStream.getTracks().forEach((t) => t.stop()); mediaStream = null; }
+  providerReady = false;
+  workletChunkCount = 0;
   setMonitorActive(false);
+  setAudioStatus('音訊待機');
 }
 
 function pushSessionUpdate() {
@@ -820,7 +913,7 @@ ${attitudeSection}
 - 核心情緒：${stateLabels[state.emotionalState]}
 ${weatherNote}
 
-說話方式：說中文，語氣真實，允許不完整的句子、停頓、矛盾。不要給出解決方案——你在思考。可以反問。${override ? '\n\n補充指令：' + override : ''}`;
+說話方式：使用臺灣繁體中文（zh-TW），避免簡體字與中國大陸用語；語氣真實，允許不完整的句子、停頓、矛盾。不要給出解決方案——你在思考。可以反問。${override ? '\n\n補充指令：' + override : ''}`;
 }
 
 // ── UI interaction ────────────────────────────────────────────────────────────
@@ -1104,6 +1197,7 @@ async function loadSettings() {
     setSettingValue('setting-ktv-auto', String(settings.ktv.autoRewrite));
     setSettingValue('setting-yolo-confidence', settings.yolo.confidence);
     setSettingValue('setting-yolo-fps', settings.yolo.fpsTarget);
+    await refreshAudioDevices();
     setSettingsStatus('已讀取。API key 顯示遮罩，留白或不改即維持原值。', true);
   } catch (error) {
     setSettingsStatus('無法讀取設定：' + error.message, false);
@@ -1138,6 +1232,12 @@ async function saveSettings() {
       confidence: Number(getSettingValue('setting-yolo-confidence')),
       fpsTarget: Number(getSettingValue('setting-yolo-fps')),
     },
+    audio: {
+      inputDeviceId: getSettingValue('setting-audio-input'),
+      inputDeviceLabel: document.querySelector('#setting-audio-input option:checked')?.textContent || '',
+      outputDeviceId: getSettingValue('setting-audio-output'),
+      outputDeviceLabel: document.querySelector('#setting-audio-output option:checked')?.textContent || '',
+    },
   };
   btn.disabled = true;
   btn.textContent = '儲存中⋯';
@@ -1158,6 +1258,84 @@ async function saveSettings() {
   } finally {
     btn.disabled = false;
     btn.textContent = '儲存系統設定';
+  }
+}
+
+function onAudioDeviceChange() {
+  setSettingsStatus('音訊裝置選擇已變更。請儲存，下一次開始連線時套用。', true);
+}
+
+async function refreshAudioDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    populateAudioDeviceSelect('setting-audio-input', devices.filter((device) => device.kind === 'audioinput'),
+      state.settings?.audio?.inputDeviceId, '系統預設麥克風');
+    populateAudioDeviceSelect('setting-audio-output', devices.filter((device) => device.kind === 'audiooutput'),
+      state.settings?.audio?.outputDeviceId, '系統預設輸出');
+  } catch (error) {
+    console.warn('[audio] Could not enumerate devices:', error.message);
+  }
+}
+
+function populateAudioDeviceSelect(id, devices, selectedId, defaultLabel) {
+  const select = document.getElementById(id);
+  const currentValue = selectedId || select.value || '';
+  select.replaceChildren(new Option(defaultLabel, ''));
+  devices.forEach((device, index) => {
+    select.add(new Option(device.label || `${defaultLabel} ${index + 1}`, device.deviceId));
+  });
+  select.value = Array.from(select.options).some((option) => option.value === currentValue) ? currentValue : '';
+}
+
+async function testMicrophone() {
+  if (state.sessionActive) {
+    setSettingsStatus('請先結束 AI session，再測試麥克風。', false);
+    return;
+  }
+  const btn = document.querySelector('[onclick="testMicrophone()"]');
+  stopAudioCapture();
+  prepareInputAudio();
+  btn.disabled = true;
+  btn.textContent = '測試中⋯請說話';
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioInputConstraints(), video: false });
+    await refreshAudioDevices();
+    await startAudioCapture();
+    setAudioStatus('麥克風測試中：請說話，INPUT 圖表應移動');
+    setTimeout(() => {
+      if (!state.sessionActive) stopAudioCapture();
+      btn.disabled = false;
+      btn.textContent = '測試麥克風';
+    }, 8000);
+  } catch (error) {
+    setAudioStatus('麥克風測試失敗：' + error.message, true);
+    btn.disabled = false;
+    btn.textContent = '測試麥克風';
+  }
+}
+
+async function testSpeaker() {
+  const btn = document.querySelector('[onclick="testSpeaker()"]');
+  try {
+    const context = await prepareOutputAudio();
+    const start = context.currentTime + 0.05;
+    for (const offset of [0, 0.32]) {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, start + offset);
+      gain.gain.exponentialRampToValueAtTime(0.28, start + offset + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.16);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(start + offset);
+      oscillator.stop(start + offset + 0.18);
+    }
+    const sinkLabel = state.settings?.audio?.outputDeviceLabel || '系統預設輸出';
+    setAudioStatus(`輸出測試：880 Hz 兩聲提示音 → ${sinkLabel}（${context.state}）`);
+    flashButton(btn, '✓ 兩聲測試中', 900);
+  } catch (error) {
+    setAudioStatus('輸出測試失敗：' + error.message, true);
   }
 }
 
@@ -1239,7 +1417,22 @@ function setMicLive(live) {
 
 let outputAudioCtx  = null;
 let outputNextTime  = 0;   // AudioContext time when next chunk should start
+let outputSinkId    = null;
 const OUTPUT_SAMPLE_RATE = 24000; // both OpenAI and Gemini output 24kHz PCM16
+
+function setAudioStatus(text, isError = false) {
+  const el = document.getElementById('audio-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--active)' : 'var(--muted)';
+}
+
+async function prepareOutputAudio() {
+  const context = ensureOutputContext();
+  await context.resume();
+  await applyOutputSink(context);
+  return context;
+}
 
 function ensureOutputContext() {
   if (!outputAudioCtx || outputAudioCtx.state === 'closed') {
@@ -1249,6 +1442,17 @@ function ensureOutputContext() {
   // Resume if suspended (browser autoplay policy)
   if (outputAudioCtx.state === 'suspended') outputAudioCtx.resume();
   return outputAudioCtx;
+}
+
+async function applyOutputSink(context) {
+  const outputDeviceId = state.settings?.audio?.outputDeviceId;
+  if (!outputDeviceId || outputDeviceId === outputSinkId) return;
+  if (typeof context.setSinkId !== 'function') {
+    setAudioStatus('此 Electron 版本不支援指定輸出裝置，使用系統預設輸出。', true);
+    return;
+  }
+  await context.setSinkId(outputDeviceId);
+  outputSinkId = outputDeviceId;
 }
 
 function playOutputAudio(base64Pcm16) {
@@ -1279,8 +1483,10 @@ function playOutputAudio(base64Pcm16) {
     const startAt = Math.max(outputNextTime, ctx.currentTime);
     source.start(startAt);
     outputNextTime = startAt + buffer.duration;
+    setAudioStatus('AI 音訊播放中');
   } catch (err) {
     console.warn('[audio] playback error:', err.message);
+    setAudioStatus('AI 音訊播放失敗：' + err.message, true);
   }
 }
 
@@ -1289,6 +1495,7 @@ function stopOutputAudio() {
     outputAudioCtx.close();
     outputAudioCtx = null;
     outputNextTime = 0;
+    outputSinkId = null;
   }
 }
 
@@ -1340,8 +1547,8 @@ function rmsFromBase64Pcm16(b64) {
   }
 }
 
-function feedInputMeter(b64) {
-  inputBuf[inputBufIdx % METER_BARS] = rmsFromBase64Pcm16(b64);
+function feedInputMeter(b64, rms) {
+  inputBuf[inputBufIdx % METER_BARS] = Number.isFinite(rms) ? rms : rmsFromBase64Pcm16(b64);
   inputBufIdx++;
 }
 
@@ -1431,6 +1638,9 @@ function pushMonitorParams() {
 connectBus();
 initLyricsEditor();
 loadSettings();
+if (new URLSearchParams(location.search).has('settings')) {
+  document.getElementById('runtime-settings').open = true;
+}
 </script>
 </body>
 </html>

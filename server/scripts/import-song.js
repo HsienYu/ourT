@@ -14,24 +14,23 @@
  * Requirements:
  *   - yt-dlp installed: brew install yt-dlp
  *   - ffmpeg installed: brew install ffmpeg
- *   - OPENAI_API_KEY in .env (for Whisper API)
+ *   - OpenAI API key in the ourT Settings panel (for Whisper API)
  *   - OR: pip install openai-whisper (for local fallback)
  */
 
 'use strict';
 
-require('dotenv').config();
-
 const { execSync, execFileSync, spawnSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
+const { getApiKey, getSettings } = require('../lib/settings');
 
 const SONGS_DIR  = path.join(__dirname, '../../songs');
 const AUDIO_DIR  = path.join(SONGS_DIR, 'audio');
 const LYRICS_DIR = path.join(SONGS_DIR, 'lyrics');
 const CATALOG    = path.join(SONGS_DIR, 'index.json');
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = getApiKey('openai');
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -179,7 +178,7 @@ async function main() {
         console.error(
           '  [2/3] Local whisper not found.\n' +
           '  Install: pip install openai-whisper\n' +
-          '  Or set OPENAI_API_KEY for the cloud API.'
+          '  Or configure an OpenAI API key in the ourT Settings panel.'
         );
         process.exit(1);
       }
@@ -209,7 +208,7 @@ async function main() {
   }
 
   // Step 5: Optionally pre-generate LLM variants
-  if (forceGen || process.env.KTV_AUTO_REWRITE === 'true') {
+  if (forceGen || getSettings().ktv.autoRewrite) {
     console.log('\n  Running generate-lyrics.js…');
     try {
       execFileSync('node', [

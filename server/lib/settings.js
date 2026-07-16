@@ -1,8 +1,8 @@
 /**
  * settings.js
  *
- * Runtime settings persistence. Reads/writes server/settings.json.
- * Falls back to environment variables for defaults.
+ * Runtime settings persistence. Electron supplies a user-writable path in
+ * Application Support; standalone development defaults to server/settings.json.
  * Keys are stored server-side only; never sent to browser in full.
  */
 
@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const SETTINGS_FILE = path.join(__dirname, '..', 'settings.json');
+const SETTINGS_FILE = process.env.OURT_SETTINGS_PATH || path.join(__dirname, '..', 'settings.json');
 
 const DEFAULT_SETTINGS = {
   providers: {
@@ -46,6 +46,12 @@ const DEFAULT_SETTINGS = {
     model:      'yolov8n.pt',
     fpsTarget:  30,
   },
+  audio: {
+    inputDeviceId: '',
+    inputDeviceLabel: '',
+    outputDeviceId: '',
+    outputDeviceLabel: '',
+  },
 };
 
 let settingsCache = null;
@@ -71,42 +77,71 @@ function deepMerge(target, source) {
 }
 
 /**
- * Load settings from file, merging with defaults and env fallbacks.
+ * Load settings from the canonical JSON file. A legacy Electron .env file is
+ * imported once only when no canonical settings file exists yet.
  * @returns {object}
  */
 function loadSettings() {
   if (settingsCache) return settingsCache;
 
   let fileSettings = {};
+  let loadedFromFile = false;
   try {
     const raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
     fileSettings = JSON.parse(raw);
+    loadedFromFile = true;
   } catch {
-    // file doesn't exist or invalid JSON — use defaults
+    // File does not exist or is invalid JSON — start from defaults.
   }
 
-  // Start with defaults, overlay file settings, then env var fallbacks for keys
+  // Start with defaults and overlay the canonical settings file.
   settingsCache = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   deepMerge(settingsCache, fileSettings);
 
-  // Environment variable fallback for API keys (only used if settings key is empty)
-  if (!settingsCache.keys.openai && process.env.OPENAI_API_KEY) {
-    settingsCache.keys.openai = process.env.OPENAI_API_KEY;
-  }
-  if (!settingsCache.keys.anthropic && process.env.ANTHROPIC_API_KEY) {
-    settingsCache.keys.anthropic = process.env.ANTHROPIC_API_KEY;
-  }
-  if (!settingsCache.keys.gemini && process.env.GEMINI_API_KEY) {
-    settingsCache.keys.gemini = process.env.GEMINI_API_KEY;
-  }
-  if (!settingsCache.keys.groq && process.env.GROQ_API_KEY) {
-    settingsCache.keys.groq = process.env.GROQ_API_KEY;
-  }
-  if (!settingsCache.keys.mistral && process.env.MISTRAL_API_KEY) {
-    settingsCache.keys.mistral = process.env.MISTRAL_API_KEY;
-  }
+  if (!loadedFromFile) migrateLegacySettings();
 
   return settingsCache;
+}
+
+function migrateLegacySettings() {
+  let migrated = false;
+  const legacySettingsPath = process.env.OURT_LEGACY_SETTINGS_PATH;
+  if (legacySettingsPath && fs.existsSync(legacySettingsPath)) {
+    try {
+      deepMerge(settingsCache, JSON.parse(fs.readFileSync(legacySettingsPath, 'utf8')));
+      migrated = true;
+    } catch (err) {
+      console.warn('[settings] Could not import legacy settings.json:', err.message);
+    }
+  }
+
+  const legacyPath = process.env.OURT_LEGACY_ENV_PATH;
+  if (legacyPath && fs.existsSync(legacyPath)) {
+    try {
+      const dotenv = require('dotenv');
+      const legacy = dotenv.parse(fs.readFileSync(legacyPath));
+      const keyMap = {
+        openai: 'OPENAI_API_KEY',
+        anthropic: 'ANTHROPIC_API_KEY',
+        gemini: 'GEMINI_API_KEY',
+        groq: 'GROQ_API_KEY',
+        mistral: 'MISTRAL_API_KEY',
+      };
+      for (const [provider, envName] of Object.entries(keyMap)) {
+        if (!settingsCache.keys[provider] && legacy[envName]) {
+          settingsCache.keys[provider] = legacy[envName];
+        }
+      }
+      migrated = true;
+    } catch (err) {
+      console.warn('[settings] Could not import legacy .env:', err.message);
+    }
+  }
+
+  if (migrated) {
+    persistSettings();
+    console.log(`[settings] Imported legacy configuration into ${SETTINGS_FILE}`);
+  }
 }
 
 /**
@@ -124,23 +159,13 @@ function getSettings(maskSecrets = false) {
 }
 
 /**
- * Get API key for a provider, with env fallback.
+ * Get API key for a provider from the canonical settings file.
  * @param {string} provider - 'openai' | 'anthropic' | 'gemini' | 'groq' | 'mistral'
  * @returns {string}
  */
 function getApiKey(provider) {
   const settings = loadSettings();
-  const key = settings.keys[provider];
-  if (key) return key;
-  // Env fallback (already merged at load, but double-check)
-  const envMap = {
-    openai: 'OPENAI_API_KEY',
-    anthropic: 'ANTHROPIC_API_KEY',
-    gemini: 'GEMINI_API_KEY',
-    groq: 'GROQ_API_KEY',
-    mistral: 'MISTRAL_API_KEY',
-  };
-  return process.env[envMap[provider]] || '';
+  return settings.keys[provider] || '';
 }
 
 /**

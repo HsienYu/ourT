@@ -41,18 +41,11 @@ The terminal prints your local network URLs:
 
 ## Setup
 
-### 1. API Keys
+### 1. API Keys and Settings
 
-```bash
-cd server
-cp .env.example .env
-# Fill in OPENAI_API_KEY and ANTHROPIC_API_KEY
-```
+Start the app, open `/control`, then expand `系統設定`. The Control UI is the only normal editor for API keys, models, KTV options, and audio devices.
 
-| Key | Where | Required for |
-|---|---|---|
-| `OPENAI_API_KEY` | `server/.env` | App 1 AI voice + Whisper transcription |
-| `ANTHROPIC_API_KEY` | `server/.env` | App 3 KTV song analysis + lyrics rewrite |
+Electron stores the canonical configuration in `~/Library/Application Support/ourt/settings.json`. Development mode stores it in `server/settings.json`. Both files are ignored by Git.
 
 ### 2. Node.js dependencies
 
@@ -173,7 +166,7 @@ node scripts/generate-lyrics.js --force
 
 Variants: `gender-swap` (性別互換), `emotional` (情緒放大), `distorted` (超現實扭曲)
 
-**Auto-rewrite on audience request:** Set `KTV_AUTO_REWRITE=true` in `.env`.  
+**Auto-rewrite on audience request:** Enable `KTV 自動改寫` in `/control` → `系統設定`.
 The LLM rewrites lyrics in the background when a song enters the queue.  
 If completed before the song plays, modified lyrics appear immediately.  
 If still generating, original plays first and lyrics swap mid-song automatically.
@@ -272,14 +265,13 @@ npm start          # development
 npm run build      # builds dist/ourT.dmg
 ```
 
-API keys are read from `~/Library/Application Support/ourT/.env`.  
-On first launch, the app creates this file and asks you to fill it in.
+API keys and all runtime settings are read from `~/Library/Application Support/ourt/settings.json` and edited in `/control`. The Electron tray item `開啟系統設定` opens that UI. Existing legacy `server/settings.json` values and `.env` keys are imported once when this JSON file is first created.
 
 ---
 
 ## Pre-Performance Checklist
 
-- [ ] `server/.env` has valid API keys
+- [ ] API keys and provider/model selection verified in `/control` → `系統設定`
 - [ ] At least 3 songs in `songs/index.json` with audio + LRC
 - [ ] LLM lyrics variants pre-generated: `node scripts/generate-lyrics.js`
 - [ ] `server/rag/` contains performance concept documents
@@ -295,12 +287,12 @@ On first launch, the app creates this file and asks you to fill it in.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `OPENAI_API_KEY not set` on start | Missing `.env` | `cp .env.example .env` and fill keys |
+| No realtime provider available | Missing API key | Open `/control` → `系統設定`, enter and save a provider key |
 | `AI 未開始` badge stays after tapping 開始 | Mic permission denied | Check browser permissions |
 | Transcript never appears on projection | `/projection` not connected to bus | Refresh `/projection` page |
 | `MediaPipe: model not found` | Missing `.task` file | Run `python -c "from processors.yolo_detector import _ensure_model; _ensure_model()"` in venv |
 | LRC lyrics not syncing | LRC timestamps mismatch | Adjust `lrcOffset` in `songs/index.json` (seconds) |
-| KTV auto-rewrite not working | `KTV_AUTO_REWRITE` not set | Add `KTV_AUTO_REWRITE=true` to `.env` |
+| KTV auto-rewrite not working | Auto-rewrite disabled | Enable KTV 自動改寫 in `/control` → `系統設定` |
 | NDI stream not visible | NDI SDK not installed | Download from ndi.video, then `pip install ndi-python` |
 
 ---

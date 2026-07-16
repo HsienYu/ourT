@@ -37,10 +37,6 @@
 
 'use strict';
 
-require('dotenv').config(
-  process.env.DOTENV_CONFIG_PATH ? { path: process.env.DOTENV_CONFIG_PATH } : {}
-);
-
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -54,10 +50,6 @@ const settingsLib = require('./lib/settings');
 const aiProviders = require('./lib/ai-providers');
 
 const PORT = process.env.PORT || 3000;
-
-if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) {
-  console.warn('[server] WARNING: Neither OPENAI_API_KEY nor GEMINI_API_KEY set. Realtime voice will not work until configured.');
-}
 
 // ── Express app ─────────────────────────────────────────────────────────────
 const app = express();
@@ -461,8 +453,8 @@ wssRealtime.on('connection', (ws) => {
   // Load current settings for API keys and provider defaults
   const settings = settingsLib.getSettings(false);
   const apiKeys = {
-    openai: process.env.OPENAI_API_KEY || settings.keys.openai,
-    gemini: process.env.GEMINI_API_KEY || settings.keys.gemini,
+    openai: settings.keys.openai,
+    gemini: settings.keys.gemini,
     openaiRealtime: settings.models.openaiRealtime,
     geminiLive: settings.models.geminiLive,
   };
