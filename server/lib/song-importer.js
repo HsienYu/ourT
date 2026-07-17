@@ -23,8 +23,9 @@ const path = require('path');
 const { getApiKey } = require('./settings');
 const { segmentsToLrc, refineSegmentTimestamps } = require('./lyrics-sync');
 const songQueue = require('./song-queue');
+const { getSongsDir } = require('./song-storage');
 
-const SONGS_DIR = path.join(__dirname, '../../songs');
+const SONGS_DIR = getSongsDir();
 const AUDIO_DIR = path.join(SONGS_DIR, 'audio');
 const LYRICS_DIR = path.join(SONGS_DIR, 'lyrics');
 
@@ -123,6 +124,8 @@ async function importSong({ url, title, artist, tags = [], onProgress = () => {}
 
   if (!checkTool('yt-dlp')) throw new Error('yt-dlp 未安裝（brew install yt-dlp）');
   if (!checkTool('ffmpeg')) throw new Error('ffmpeg 未安裝（brew install ffmpeg）');
+  fs.mkdirSync(AUDIO_DIR, { recursive: true });
+  fs.mkdirSync(LYRICS_DIR, { recursive: true });
 
   const audioPath = path.join(AUDIO_DIR, `${id}.mp3`);
   if (fs.existsSync(audioPath)) {

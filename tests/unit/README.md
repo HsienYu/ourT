@@ -53,6 +53,9 @@ npm test
 - `build-expiry.test.js` — covers the local-time expiry boundary for packaged
   Electron builds and the bounded recheck interval used to close an App that
   remains open until expiry.
+- `song-storage.test.js` — covers first-launch seeding of packaged songs into
+  the writable runtime songs directory and preservation of imported media on
+  later launches.
 
 ## What's intentionally NOT covered here
 

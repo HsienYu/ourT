@@ -348,6 +348,12 @@ default Electron icon and a plain DMG window. Add real assets there and point
 
 API keys and all runtime settings are read from `~/Library/Application Support/ourt/settings.json` and edited in `/control`. The Electron tray item `開啟系統設定` opens that UI. Existing legacy `server/settings.json` values and `.env` keys are imported once when this JSON file is first created — **only during local development**, never inside a built app.
 
+Packaged App song data is stored separately at
+`~/Library/Application Support/ourt/songs/`. On first launch the App copies
+its bundled starter catalog/media there; all later imports, lyric edits, and
+catalog changes use this writable directory. This prevents imported songs from
+being written into the signed App bundle and preserves them across relaunches.
+
 `server/settings.json` (your local dev API keys) is explicitly excluded from
 the `extraResources` copy step in `ourT-electron/package.json` (`!settings.json`
 in the filter). A built `.app`/`.dmg` therefore never bundles your local keys —

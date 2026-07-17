@@ -28,8 +28,9 @@
 const fs   = require('fs');
 const path = require('path');
 const { getApiKey } = require('../lib/settings');
+const { getSongsDir } = require('../lib/song-storage');
 
-const SONGS_DIR  = path.join(__dirname, '../../songs');
+const SONGS_DIR  = getSongsDir();
 const LYRICS_DIR = path.join(SONGS_DIR, 'lyrics');
 const CATALOG    = path.join(SONGS_DIR, 'index.json');
 

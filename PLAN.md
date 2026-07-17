@@ -439,3 +439,24 @@ manual verification.
 - [todo] Manual packaged-app verification: launch before expiry and confirm
   windows open; verify expiry dialog/no server startup after cutoff and auto-quit
   when crossing the cutoff
+
+## Phase 13 — Packaged KTV Media Storage [active]
+
+User reported that a newly imported song could not play and no lyrics appeared
+on Projection. The imported catalog, MP3, and LRC were present and internally
+consistent, ruling out a download/ID mismatch. Root cause: packaged Electron
+started the server from `Resources/server`, while the importer and media routes
+resolved songs relative to that bundled location instead of a user-writable,
+persistent runtime directory; Projection also silently swallowed media errors.
+
+- [done] Add shared `song-storage` paths used by catalog, importer, media
+  routes, and lyric-generation script
+- [done] On packaged first launch, seed `~/Library/Application Support/ourt/songs`
+  from bundled media; later launches preserve imported catalog/audio/LRC files
+- [done] Pass the writable songs directory to the packaged server through
+  `OURT_SONGS_DIR`; development continues using repository `songs/`
+- [done] Show audio and lyric fetch/playback errors directly on Projection and
+  in its developer console instead of silently rendering an empty KTV screen
+- [done] Unit tests verify runtime seeding and imported-media preservation
+- [todo] Manual packaged-app verification: import a song, point/play it, confirm
+  audible audio and lyrics; relaunch and confirm the song remains available

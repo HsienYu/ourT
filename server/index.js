@@ -55,8 +55,13 @@ const aiProviders = require('./lib/ai-providers');
 const providerCatalog = require('./lib/provider-catalog');
 const youtubeSearch = require('./lib/youtube-search');
 const songImporter = require('./lib/song-importer');
+const { getSongsDir } = require('./lib/song-storage');
 
 const PORT = process.env.PORT || 3000;
+const SONGS_DIR = getSongsDir();
+const LYRICS_DIR = path.join(SONGS_DIR, 'lyrics');
+const AUDIO_DIR = path.join(SONGS_DIR, 'audio');
+const COVERS_DIR = path.join(SONGS_DIR, 'covers');
 
 // ── Express app ─────────────────────────────────────────────────────────────
 const app = express();
@@ -140,11 +145,11 @@ app.get('/api/songs/:id/lyrics', (req, res) => {
   const lrcFile = variant === 'original'
     ? `${songId}.lrc`
     : `${songId}.${variant}.lrc`;
-  const lrcPath = path.join(__dirname, '../songs/lyrics', lrcFile);
+  const lrcPath = path.join(LYRICS_DIR, lrcFile);
 
   res.sendFile(lrcPath, (err) => {
     if (err) {
-      const fallback = path.join(__dirname, '../songs/lyrics', `${songId}.lrc`);
+      const fallback = path.join(LYRICS_DIR, `${songId}.lrc`);
       res.sendFile(fallback, (err2) => {
         if (err2) res.status(404).json({ error: 'lyrics not found' });
       });
@@ -154,7 +159,7 @@ app.get('/api/songs/:id/lyrics', (req, res) => {
 
 app.get('/api/songs/:id/lyrics/variants', (req, res) => {
   const songId = req.params.id;
-  const lyricsDir = path.join(__dirname, '../songs/lyrics');
+  const lyricsDir = LYRICS_DIR;
   const KNOWN_VARIANTS = ['original', 'gender-swap', 'emotional', 'distorted'];
   const available = [];
 
@@ -218,7 +223,7 @@ async function generateLyricsLLM(songId, variant, customPrompt) {
 
   let originalLrc;
   try {
-    originalLrc = fs.readFileSync(path.join(__dirname, '../songs/lyrics', `${songId}.lrc`), 'utf8');
+    originalLrc = fs.readFileSync(path.join(LYRICS_DIR, `${songId}.lrc`), 'utf8');
   } catch {
     throw new Error('original lyrics not found');
   }
@@ -236,7 +241,7 @@ async function generateLyricsLLM(songId, variant, customPrompt) {
   });
 
   // Save to file and set as live override
-  const outPath = path.join(__dirname, '../songs/lyrics', `${songId}.${variant}.lrc`);
+  const outPath = path.join(LYRICS_DIR, `${songId}.${variant}.lrc`);
   fs.writeFileSync(outPath, text, 'utf8');
   lyricsOverrides.set(songId, { lrcText: text, variant });
 
@@ -300,7 +305,7 @@ app.post('/api/ktv/analyze-trigger', (req, res) => {
 // Serve cover art
 app.get('/api/songs/:id/cover', (req, res) => {
   const ext = req.query.ext || 'jpg';
-  const coverPath = path.join(__dirname, '../songs/covers', `${req.params.id}.${ext}`);
+  const coverPath = path.join(COVERS_DIR, `${req.params.id}.${ext}`);
   res.sendFile(coverPath, (err) => {
     if (err) res.status(404).json({ error: 'cover not found' });
   });
@@ -309,7 +314,7 @@ app.get('/api/songs/:id/cover', (req, res) => {
 // Serve audio files
 app.get('/api/songs/:id/audio', (req, res) => {
   const ext = req.query.ext || 'mp3';
-  const audioPath = path.join(__dirname, '../songs/audio', `${req.params.id}.${ext}`);
+  const audioPath = path.join(AUDIO_DIR, `${req.params.id}.${ext}`);
   res.sendFile(audioPath, (err) => {
     if (err) res.status(404).json({ error: 'audio not found' });
   });

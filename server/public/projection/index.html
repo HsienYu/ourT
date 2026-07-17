@@ -168,6 +168,10 @@
     font-size: clamp(13px, 1.6vw, 20px);
     color: var(--muted); letter-spacing: 2px; margin-top: 6px;
   }
+  #ktv-status {
+    min-height: 1.4em; margin-top: 10px; color: #ff819c; font-size: 12px;
+    letter-spacing: 1px;
+  }
 
   #ktv-lyrics {
     display: flex; flex-direction: column;
@@ -280,6 +284,7 @@
   <div id="ktv-song-info">
     <div id="ktv-title">—</div>
     <div id="ktv-artist">—</div>
+    <div id="ktv-status"></div>
   </div>
   <div id="ktv-lyrics"></div>
   <audio id="ktv-audio" preload="auto"></audio>
@@ -392,6 +397,7 @@ function loadSong(item) {
 
   document.getElementById('ktv-title').textContent  = s.title;
   document.getElementById('ktv-artist').textContent = s.artist;
+  setKtvStatus('');
 
   // Cover art blurred background
   document.getElementById('ktv-view').style.setProperty(
@@ -406,7 +412,14 @@ function loadSong(item) {
 
   loadLyrics(s.id, currentLyricsVariant);
 
-  audio.oncanplay = () => audio.play().catch(() => {});
+  audio.oncanplay = () => audio.play().catch((error) => {
+    setKtvStatus(`無法播放音訊：${error.message}`);
+    console.error('[ktv] audio playback failed:', error);
+  });
+  audio.onerror = () => {
+    setKtvStatus('音訊載入失敗，請確認歌曲檔案是否存在');
+    console.error('[ktv] audio load failed:', audio.error);
+  };
   audio.ontimeupdate = () => {
     syncLyrics(audio.currentTime - currentLrcOffset);
     updateProgress(audio.currentTime, audio.duration);
@@ -416,6 +429,10 @@ function loadSong(item) {
   setMode('ktv');
 }
 
+function setKtvStatus(message) {
+  document.getElementById('ktv-status').textContent = message;
+}
+
 function setWipeColor(variant) {
   currentWipeColor = VARIANT_COLORS[variant] || VARIANT_COLORS.original;
   document.documentElement.style.setProperty('--wipe-color', currentWipeColor);
@@ -423,11 +440,20 @@ function setWipeColor(variant) {
 
 function loadLyrics(songId, variant) {
   fetch(`/api/songs/${songId}/lyrics?variant=${variant}`)
-    .then((r) => r.ok ? r.text() : null)
+    .then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.text();
+    })
     .then((lrc) => {
-      lrcLines = lrc ? parseLrc(lrc) : [];
+      lrcLines = parseLrc(lrc);
       currentLineIndex = -1;
       renderLyrics(-1);
+    })
+    .catch((error) => {
+      lrcLines = [];
+      document.getElementById('ktv-lyrics').textContent = '歌詞載入失敗，請確認 LRC 檔案是否存在';
+      setKtvStatus(`歌詞錯誤：${error.message}`);
+      console.error('[ktv] lyrics load failed:', error);
     });
 }
 

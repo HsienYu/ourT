@@ -29,11 +29,14 @@ const SERVER_DIR  = IS_PACKAGED
   ? path.join(process.resourcesPath, 'server')
   : path.join(__dirname, '../server');
 const SERVER_ENTRY = path.join(SERVER_DIR, 'index.js');
+const BUNDLED_SONGS_DIR = path.join(SERVER_DIR, '../songs');
 
 // User config has one canonical location in Application Support.
 const USER_DATA   = app.getPath('userData');
 const SETTINGS_PATH = path.join(USER_DATA, 'settings.json');
 const LEGACY_ENV_PATH = path.join(USER_DATA, '.env');
+const RUNTIME_SONGS_DIR = path.join(USER_DATA, 'songs');
+const { seedSongsDirectory } = require(path.join(SERVER_DIR, 'lib/song-storage'));
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let serverProcess  = null;
@@ -48,6 +51,7 @@ let expiryTimer    = null;
 app.whenReady().then(async () => {
   if (exitIfBuildExpired()) return;
   ensureSettingsDirectory();
+  ensureSongsDirectory();
   await startServer();
   openWindows();
   connectBus();
@@ -90,6 +94,10 @@ function ensureSettingsDirectory() {
   if (!fs.existsSync(USER_DATA)) fs.mkdirSync(USER_DATA, { recursive: true });
 }
 
+function ensureSongsDirectory() {
+  if (IS_PACKAGED) seedSongsDirectory(BUNDLED_SONGS_DIR, RUNTIME_SONGS_DIR);
+}
+
 // ── Server start ───────────────────────────────────────────────────────────────
 function startServer() {
   return new Promise((resolve, reject) => {
@@ -100,6 +108,7 @@ function startServer() {
         OURT_SETTINGS_PATH: SETTINGS_PATH,
         OURT_LEGACY_SETTINGS_PATH: path.join(SERVER_DIR, 'settings.json'),
         OURT_LEGACY_ENV_PATH: LEGACY_ENV_PATH,
+        OURT_SONGS_DIR: IS_PACKAGED ? RUNTIME_SONGS_DIR : BUNDLED_SONGS_DIR,
         NODE_ENV: 'production',
       },
       silent: true,  // capture stdout/stderr

@@ -134,6 +134,7 @@ search (`ytsearch:`).
 | Confirm both prompts | Button shows `匯入中…`, status line shows progress messages (下載音訊中… → 轉錄歌詞中… → 已加入歌曲目錄) | |
 | Wait for completion | Button shows `✓ 已匯入`, status shows `完成` | |
 | Wait for completion while `/audience` and the KTV Lyrics Editor are open | Newly imported song appears in both places without a page reload | |
+| Tap 點歌 then 播放 for the imported song | Projection plays audio and shows lyrics; no `音訊載入失敗` or `歌詞載入失敗` status appears | |
 | Trigger a yt-dlp failure (e.g. search for a private/deleted video's ID) | Status shows the actual error message, button re-enables as `重試匯入` | |
 
 ---

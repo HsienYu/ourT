@@ -8,11 +8,11 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
+const { getCatalogPath } = require('./song-storage');
 
 // Overridable for tests (OURT_SONGS_CATALOG_PATH) so unit tests never touch
 // the real songs/index.json — same pattern as OURT_SETTINGS_PATH in settings.js.
-const CATALOG_PATH = process.env.OURT_SONGS_CATALOG_PATH || path.join(__dirname, '../../songs/index.json');
+const CATALOG_PATH = getCatalogPath();
 
 let queue = [];       // Array of song request objects
 let nowPlaying = null;
