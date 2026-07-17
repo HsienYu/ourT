@@ -92,7 +92,7 @@ function enqueue(songId, requesterLabel) {
 }
 
 function dequeue() {
-  if (queue.length === 0) return null;
+  if (nowPlaying || queue.length === 0) return null;
   nowPlaying = queue.shift();
   if (broadcast) {
     broadcast.toAll({ type: 'queue.updated', queue: getQueue() });

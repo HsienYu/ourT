@@ -30,6 +30,7 @@ Record results and evidence in the Evidence column.
 |---|---|---|
 | Tap 點歌 for a song on phone | Toast: 已加入：[title] | |
 | Queue updates on operator panel | Song appears in KTV 點歌佇列 | |
+| Keep Projection closed, then tap 播放 | Control log states `投影畫面尚未連線` and the requested song remains in the queue | |
 | Tap 播放 on operator panel | Projection switches to KTV mode | |
 | Song title and artist shown | Large text, accent colour | |
 | Audio plays | Sound audible from speaker | |
@@ -37,6 +38,7 @@ Record results and evidence in the Evidence column.
 | Progress bar fills | Thin bar at bottom grows left to right | |
 | With another request queued, tap 切歌 | Current audio stops and the next song immediately starts on projection | |
 | Tap 切歌 with no next request | Current audio stops, projection leaves KTV mode, and queue shows no current song | |
+| Reload Projection while a song is playing | Projection reconnects and reloads the current song rather than remaining blank | |
 
 ---
 

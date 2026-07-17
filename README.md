@@ -230,11 +230,15 @@ Claude reads them before every rewrite to align the lyrics with the show's artis
 
 1. Audience requests songs on `/audience`
 2. Queue appears in operator panel
-3. Tap **播放** to start the next request
+3. Confirm the Projection window is open and connected, then tap **播放** to start the next request
 4. Tap **切歌** to stop the current song and immediately start the next request; it stops playback when the queue is empty
 5. Toggle **歌詞模式：整行 / 掃光** for line-highlight vs karaoke wipe
 6. **Lyrics Editor** section: select variant, generate with LLM, or edit LRC directly and push to projection
 7. Tap **他點這首歌有什麼樣的傾向？** (operator or audience) for Claude analysis overlay
+
+The control log rejects Play without an open Projection window, so a request is
+never silently removed from the queue. If Projection reconnects while a song is
+active, the server sends it the current song again.
 
 ### KTV variant wipe colours
 

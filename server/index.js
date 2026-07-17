@@ -109,8 +109,15 @@ app.post('/api/queue/enqueue', (req, res) => {
 });
 
 app.post('/api/queue/play', (req, res) => {
+  if (!hasBusClient('projection')) {
+    return res.status(409).json({ ok: false, error: '投影畫面尚未連線，請先開啟 Projection 視窗' });
+  }
+  if (songQueue.getQueue().nowPlaying) {
+    return res.status(409).json({ ok: false, error: '已有歌曲正在播放，請使用切歌或等待歌曲結束' });
+  }
   const item = songQueue.dequeue();
-  res.json({ ok: !!item, item });
+  if (!item) return res.status(400).json({ ok: false, error: '佇列為空' });
+  return res.json({ ok: true, item });
 });
 
 app.post('/api/queue/end', (req, res) => {
@@ -462,6 +469,13 @@ const wssRealtime = new WebSocket.Server({ noServer: true });
 const busClients = new Map(); // ws → { role: 'projection'|'control'|'audience'|'monitor' }
 let activeRealtimeWs = null;
 
+function hasBusClient(role) {
+  for (const [ws, meta] of busClients) {
+    if (meta.role === role && ws.readyState === WebSocket.OPEN) return true;
+  }
+  return false;
+}
+
 // Broadcast bus implementation
 const broadcast = {
   toAll(event) {
@@ -510,6 +524,9 @@ wssBus.on('connection', (ws, req) => {
     ws.send(JSON.stringify({ type: 'weather.update', weather: w, prompt: formatForPrompt(w) }));
   });
   ws.send(JSON.stringify({ type: 'queue.updated', queue: songQueue.getQueue() }));
+  if (role === 'projection' && songQueue.getQueue().nowPlaying) {
+    ws.send(JSON.stringify({ type: 'ktv.play', item: songQueue.getQueue().nowPlaying }));
+  }
 
   ws.on('message', (raw) => {
     let msg;

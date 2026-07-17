@@ -94,6 +94,21 @@ test('endSong — clears now playing and broadcasts the authoritative queue stat
   ]);
 });
 
+test('dequeue — does not replace an already playing song', () => {
+  const { songQueue } = freshSongQueueModule([
+    { id: 'song-1', title: 'A' },
+    { id: 'song-2', title: 'B' },
+  ]);
+  songQueue.enqueue('song-1', '觀眾');
+  songQueue.enqueue('song-2', '觀眾');
+  const playing = songQueue.dequeue();
+
+  assert.equal(songQueue.dequeue(), null);
+  assert.equal(songQueue.getQueue().nowPlaying, playing);
+  assert.equal(songQueue.getQueue().upcoming.length, 1);
+  assert.equal(songQueue.getQueue().upcoming[0].song.id, 'song-2');
+});
+
 test('skip — stops the current song and immediately plays the next queued song', () => {
   const { songQueue } = freshSongQueueModule([
     { id: 'song-1', title: 'A' },

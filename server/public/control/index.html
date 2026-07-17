@@ -534,8 +534,8 @@
       <div style="color:var(--muted);font-size:11px">暫無點歌</div>
     </div>
     <div class="btn-row">
-      <button class="btn primary" id="play-song-btn" onclick="playNext()">播放</button>
-      <button class="btn" id="skip-song-btn" onclick="skipSong()">切歌</button>
+      <button class="btn primary" id="play-song-btn" onclick="playNext()" disabled>播放</button>
+      <button class="btn" id="skip-song-btn" onclick="skipSong()" disabled>切歌</button>
       <button class="btn danger" onclick="clearQueue()">清空佇列</button>
     </div>
     <div class="btn-row">
@@ -1387,31 +1387,37 @@ function clearTranscript() {
 // ── KTV ───────────────────────────────────────────────────────────────────────
 async function playNext() {
   const btn = document.getElementById('play-song-btn');
-  const res = await fetch('/api/queue/play', { method: 'POST' });
-  const json = await res.json();
-  if (json.ok) {
+  try {
+    const res = await fetch('/api/queue/play', { method: 'POST' });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || '播放失敗');
     log('播放：' + json.item?.song?.title);
-    flashButton(btn, '✓ 播放中', 1500);
-  } else {
-    log('佇列為空');
-    flashButton(btn, '— 佇列空', 1500);
+    flashQueueButton(btn, '✓ 播放中', 1500);
+  } catch (error) {
+    log('無法播放：' + error.message);
+    flashQueueButton(btn, '播放失敗', 1800);
   }
 }
 
 async function skipSong() {
   const btn = document.getElementById('skip-song-btn');
-  const res = await fetch('/api/queue/skip', { method: 'POST' });
-  const json = await res.json();
-  if (!json.ok) {
-    log('目前沒有播放中的歌曲');
-    return;
-  }
-  if (json.item) {
-    log(`切歌：${json.finished.song.title} → ${json.item.song.title}`);
-    flashButton(btn, '✓ 下一首', 1500);
-  } else {
-    log(`切歌：${json.finished.song.title}（佇列已空）`);
-    flashButton(btn, '✓ 已停止', 1500);
+  try {
+    const res = await fetch('/api/queue/skip', { method: 'POST' });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || '切歌失敗');
+    if (!json.ok) {
+      log('目前沒有播放中的歌曲');
+      return;
+    }
+    if (json.item) {
+      log(`切歌：${json.finished.song.title} → ${json.item.song.title}`);
+      flashQueueButton(btn, '✓ 下一首', 1500);
+    } else {
+      log(`切歌：${json.finished.song.title}（佇列已空）`);
+      flashQueueButton(btn, '✓ 已停止', 1500);
+    }
+  } catch (error) {
+    log('無法切歌：' + error.message);
   }
 }
 
@@ -1998,6 +2004,17 @@ function flashButton(btn, label, ms = 2000) {
   setTimeout(() => {
     btn.textContent = original;
     btn.disabled = false;
+  }, ms);
+}
+
+function flashQueueButton(btn, label, ms) {
+  if (!btn) return;
+  const original = btn.textContent;
+  btn.textContent = label;
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = original;
+    renderQueue(state.queue);
   }, ms);
 }
 

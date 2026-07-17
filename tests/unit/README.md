@@ -48,8 +48,10 @@ npm test
   real `yt-dlp`/network calls are made.
 - `song-queue.test.js` — covers the catalog-writing helpers added for the
   search/import feature (`addSongToCatalog`, `updateSongOffset`) and KTV queue
-  lifecycle (`endSong`, `skip`), using an isolated temp catalog file per test
-  via `OURT_SONGS_CATALOG_PATH` so it never touches the real `songs/index.json`.
+  lifecycle (`dequeue`, `endSong`, `skip`), including the invariant that a
+  second Play cannot replace an active song. Uses an isolated temp catalog file
+  per test via `OURT_SONGS_CATALOG_PATH` so it never touches the real
+  `songs/index.json`.
 - `build-expiry.test.js` — covers the local-time expiry boundary for packaged
   Electron builds and the bounded recheck interval used to close an App that
   remains open until expiry.

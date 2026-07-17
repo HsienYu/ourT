@@ -460,3 +460,20 @@ persistent runtime directory; Projection also silently swallowed media errors.
 - [done] Unit tests verify runtime seeding and imported-media preservation
 - [todo] Manual packaged-app verification: import a song, point/play it, confirm
   audible audio and lyrics; relaunch and confirm the song remains available
+
+## Phase 14 — KTV Playback Delivery Reliability [active]
+
+Follow-up report: selecting a song and pressing `播放` had no observable result.
+The previous endpoint marked a queue item as playing before confirming that a
+Projection client was connected, and Projection only received a transient play
+event, leaving it blank after a load/reconnect race.
+
+- [done] Reject Play before queue mutation when no Projection bus client is
+  connected; the control log shows the reason and the queued song remains intact
+- [done] Replay the current `ktv.play` item when Projection connects or reconnects
+- [done] Prevent duplicate Play requests from replacing the active song
+- [done] Keep KTV controls disabled until an authoritative queue state arrives;
+  temporary button feedback now restores the state-derived disabled status
+- [done] Unit test that a second dequeue preserves the active song and queue order
+- [todo] Manual packaged-app verification: request a song with Projection open,
+  press Play, reload Projection mid-song, and confirm audio/lyrics resume
