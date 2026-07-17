@@ -26,6 +26,10 @@
  *   POST /api/songs/:id/lyrics/generate     — LLM rewrite
  *   GET  /api/songs/:id/audio               — audio file
  *   GET  /api/songs/:id/cover               — cover art
+ *   PATCH /api/songs/:id/offset             — { lrcOffset } live rehearsal sync tuning
+ *   GET  /api/songs/search?q=...            — YouTube search (yt-dlp, no API key)
+ *   POST /api/songs/import                  — { videoId, title, artist, tags } start async import
+ *   GET  /api/songs/import/:jobId           — poll import job status
  *   POST /api/ktv/analyze       — AI song analysis
  *   POST /api/ktv/analyze-trigger — audience triggers analysis
  *   GET  /api/settings          — get all settings (keys masked)
@@ -49,6 +53,8 @@ const songQueue = require('./lib/song-queue');
 const settingsLib = require('./lib/settings');
 const aiProviders = require('./lib/ai-providers');
 const providerCatalog = require('./lib/provider-catalog');
+const youtubeSearch = require('./lib/youtube-search');
+const songImporter = require('./lib/song-importer');
 
 const PORT = process.env.PORT || 3000;
 
@@ -304,13 +310,65 @@ app.get('/api/songs/:id/audio', (req, res) => {
   });
 });
 
-// Serve cover art
-app.get('/api/songs/:id/cover', (req, res) => {
-  const ext = req.query.ext || 'jpg';
-  const coverPath = path.join(__dirname, '../songs/covers', `${req.params.id}.${ext}`);
-  res.sendFile(coverPath, (err) => {
-    if (err) res.status(404).json({ error: 'cover not found' });
+// Live rehearsal lyric-offset tuning — shifts the whole song's LRC timing
+// without re-importing. Used by the "歌詞偏移" slider in /control. Broadcasts
+// so the projection screen applies the new offset immediately if that song
+// is currently playing.
+app.patch('/api/songs/:id/offset', (req, res) => {
+  const { lrcOffset } = req.body;
+  if (typeof lrcOffset !== 'number' || !Number.isFinite(lrcOffset)) {
+    return res.status(400).json({ error: 'lrcOffset must be a finite number (seconds)' });
+  }
+  const song = songQueue.updateSongOffset(req.params.id, lrcOffset);
+  if (!song) return res.status(404).json({ error: 'song not found' });
+  broadcast.toProjection({ type: 'ktv.offset.update', songId: req.params.id, lrcOffset });
+  res.json({ ok: true, song });
+});
+
+// ── YouTube search + import (no API key — uses yt-dlp's ytsearch) ─────────────
+app.get('/api/songs/search', async (req, res) => {
+  const q = req.query.q;
+  if (!q || !q.trim()) return res.status(400).json({ error: 'q query param required' });
+  try {
+    const results = await youtubeSearch.searchYoutube(q, 6);
+    res.json(results);
+  } catch (err) {
+    console.error('[songs/search] yt-dlp search failed:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// In-memory import job tracking. Download + transcription can take 30-90s,
+// so import runs in the background and the client polls for status.
+const importJobs = new Map(); // jobId -> { status: 'running'|'done'|'error', message, songId? }
+
+app.post('/api/songs/import', (req, res) => {
+  const { videoId, title, artist, tags } = req.body;
+  if (!videoId) return res.status(400).json({ error: 'videoId required' });
+
+  const jobId = `import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  importJobs.set(jobId, { status: 'running', message: '準備中…' });
+  res.json({ jobId });
+
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  songImporter.importSong({
+    url,
+    title,
+    artist,
+    tags: Array.isArray(tags) ? tags : [],
+    onProgress: (message) => importJobs.set(jobId, { status: 'running', message }),
+  }).then((result) => {
+    importJobs.set(jobId, { status: 'done', message: '完成', songId: result.id });
+  }).catch((err) => {
+    console.error('[songs/import] failed:', err.message);
+    importJobs.set(jobId, { status: 'error', message: err.message });
   });
+});
+
+app.get('/api/songs/import/:jobId', (req, res) => {
+  const job = importJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'job not found' });
+  res.json(job);
 });
 
 // ── Settings REST API ────────────────────────────────────────────────────────

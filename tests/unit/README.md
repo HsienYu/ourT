@@ -36,14 +36,29 @@ npm test
   static voice catalogs (accuracy checks against each provider's documented
   enum) and the live model-fetch/cache/fallback logic, using an injectable
   `fetch` mock so no real network calls are made.
+- `lyrics-sync.test.js` — covers `server/lib/lyrics-sync.js`: LRC timestamp
+  formatting/parsing (including the centisecond rounding carry-over fix, e.g.
+  59.999s must round to `[01:00.00]`, not a malformed `[00:59.100]`),
+  word-level segment timestamp refinement (`refineSegmentTimestamps` — the
+  core of the karaoke sync accuracy improvement), and the live "歌詞偏移"
+  offset shift.
+- `youtube-search.test.js` — covers `server/lib/youtube-search.js`: parsing
+  yt-dlp's `--dump-json` search output, thumbnail selection, and
+  query-building/error-handling, using an injectable `execFile` mock so no
+  real `yt-dlp`/network calls are made.
+- `song-queue.test.js` — covers the catalog-writing helpers added for the
+  search/import feature (`addSongToCatalog`, `updateSongOffset`), using an
+  isolated temp catalog file per test via `OURT_SONGS_CATALOG_PATH` so it
+  never touches the real `songs/index.json`.
 
 ## What's intentionally NOT covered here
 
 Anything that requires a live WebSocket, a real provider API key, an actual
-Electron window, or physical audio hardware is out of scope for unit tests —
-see `tests/manual/app1-realtime.md` for the manual verification protocol
-covering interrupt/barge-in behavior, live parameter updates against real
-providers, fullscreen/kiosk toggling, and audio output.
+Electron window, physical audio hardware, or a real `yt-dlp`/Whisper call is
+out of scope for unit tests — see `tests/manual/app1-realtime.md` for
+realtime/interrupt/audio verification and `tests/manual/app3-ktv.md` for KTV
+song search, import, and lyric-offset verification against real YouTube URLs
+and audio playback.
 
 ## Coverage expectations
 

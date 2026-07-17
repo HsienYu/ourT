@@ -309,6 +309,7 @@ let lrcLines             = [];
 let currentLineIndex     = -1;
 let currentSongId        = null;
 let currentLyricsVariant = 'original';
+let currentLrcOffset     = 0; // seconds; positive delays lyrics, negative advances them
 let lyricsStyle          = 'line';   // 'line' | 'wipe'
 let currentWipeColor     = 'var(--accent2)';
 
@@ -387,6 +388,7 @@ function loadSong(item) {
   const s = item.song;
   currentSongId = s.id;
   currentLyricsVariant = item.lyricsVariant || 'original';
+  currentLrcOffset = s.lrcOffset || 0;
 
   document.getElementById('ktv-title').textContent  = s.title;
   document.getElementById('ktv-artist').textContent = s.artist;
@@ -406,7 +408,7 @@ function loadSong(item) {
 
   audio.oncanplay = () => audio.play().catch(() => {});
   audio.ontimeupdate = () => {
-    syncLyrics(audio.currentTime);
+    syncLyrics(audio.currentTime - currentLrcOffset);
     updateProgress(audio.currentTime, audio.duration);
   };
   audio.onended = () => fetch('/api/queue/end', { method: 'POST' });
@@ -646,6 +648,13 @@ function handleBusMessage(msg) {
         currentLyricsVariant = 'original';
         setWipeColor('original');
         loadLyrics(currentSongId, 'original');
+      }
+      break;
+
+    // ── Live rehearsal sync tuning (歌詞偏移 slider in /control) ────────────────
+    case 'ktv.offset.update':
+      if (msg.songId === currentSongId) {
+        currentLrcOffset = msg.lrcOffset || 0;
       }
       break;
 

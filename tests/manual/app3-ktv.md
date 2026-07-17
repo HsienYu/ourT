@@ -93,9 +93,11 @@ Record results and evidence in the Evidence column.
 
 ---
 
-## 8. Song Import (import-song.js)
+## 8. Song Import — CLI (import-song.js)
 
-Test with one real YouTube URL.
+Test with one real YouTube URL. `import-song.js` is now a thin wrapper around
+`lib/song-importer.js` — the same pipeline the search/import UI (Section 8a)
+uses, so this also validates that shared code path.
 
 ```bash
 cd server
@@ -110,8 +112,43 @@ node scripts/import-song.js \
 |---|---|---|
 | Audio downloaded | `songs/audio/<id>.mp3` exists | |
 | LRC generated | `songs/lyrics/<id>.lrc` exists with timestamps | |
+| Console shows transcription method | `已透過 OpenAI Whisper API 轉錄（含逐字時間戳記）` if an OpenAI key is configured, or `已透過本機 whisper 轉錄` otherwise | |
 | Catalog updated | Song appears in `songs/index.json` | |
 | Song available in audience page | Listed after server restart | |
+
+---
+
+## 8a. Song Search + Import UI (/control)
+
+New in this phase — no YouTube API key required, uses `yt-dlp`'s built-in
+search (`ytsearch:`).
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Open `/control`, type a song name in 搜尋並匯入歌曲, tap 搜尋 | Within a few seconds, up to 6 results appear with thumbnail/title/channel/duration | |
+| Search for something with zero results (e.g. gibberish) | Status shows `沒有找到結果`, no error thrown | |
+| Tap 匯入 on a result | Two custom dialogs prompt for 演出者 then 歌曲標題 (not native browser dialogs — this must work in the actual Electron app, not just a browser tab) | |
+| Cancel either prompt | Import does not start | |
+| Confirm both prompts | Button shows `匯入中…`, status line shows progress messages (下載音訊中… → 轉錄歌詞中… → 已加入歌曲目錄) | |
+| Wait for completion | Button shows `✓ 已匯入`, status shows `完成` | |
+| Refresh the KTV Lyrics Editor song selector | Newly imported song appears | |
+| Trigger a yt-dlp failure (e.g. search for a private/deleted video's ID) | Status shows the actual error message, button re-enables as `重試匯入` | |
+
+---
+
+## 8b. Live Lyric Offset Tuning (歌詞偏移)
+
+New in this phase — lets an operator fine-tune sync during rehearsal without
+re-importing the song.
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Play a song | `歌詞偏移` slider appears in the KTV section, defaulting to the song's saved offset (usually `0 ms`) | |
+| Drag the slider to +500 ms | Value label updates immediately; after ~300ms debounce, log shows `歌詞偏移已更新：500 ms` | |
+| Watch the projection screen while dragging | Lyrics visibly shift later on the timeline (delay) | |
+| Drag to a negative value (e.g. -300 ms) | Lyrics shift earlier | |
+| Switch to a different song mid-queue | Slider resets to that song's own saved offset, not the previous song's value | |
+| Restart the server, replay the same song | Slider still shows the previously saved offset — confirms it persisted to `songs/index.json` | |
 
 ---
 

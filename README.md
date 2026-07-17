@@ -142,7 +142,23 @@ API (cached ~10 minutes, falls back to a static list if offline or no key).
 
 ### Add songs
 
-#### Option A: Import from YouTube (recommended)
+#### Option A: Search + import from `/control` (recommended)
+
+In `/control`, use the **搜尋並匯入歌曲** search box (KTV section) — type a
+song name or artist, pick from the results (thumbnail/title/channel/duration
+shown), tap **匯入**. No YouTube API key or registration needed — search uses
+`yt-dlp`'s built-in `ytsearch`. The server downloads the audio, transcribes
+lyrics with word-level-refined timestamps (see Sync accuracy below), and adds
+the song to the catalog automatically. Import runs in the background
+(30–90s); the button shows live progress and switches to `✓ 已匯入` when done.
+
+**On Spotify:** direct audio streaming/synchronized lyrics from Spotify are
+not usable here — Spotify's developer terms explicitly prohibit using their
+platform for public/commercial playback, and there is no public lyrics API
+at all. Metadata-only integration (search + cover art, audio still from
+YouTube) is a possible future addition — see `PLAN.md` Phase 11.
+
+#### Option B: CLI import
 
 ```bash
 cd server
@@ -153,9 +169,12 @@ node scripts/import-song.js \
   --tags "流行,愛情"
 ```
 
+Same underlying pipeline as Option A (`server/lib/song-importer.js`) — useful
+for scripting a batch import ahead of a show.
+
 Requires: `brew install yt-dlp ffmpeg`
 
-#### Option B: Manual
+#### Option C: Manual
 
 1. Add `.mp3` to `songs/audio/<id>.mp3`
 2. Add `.lrc` to `songs/lyrics/<id>.lrc`
@@ -168,6 +187,18 @@ Requires: `brew install yt-dlp ffmpeg`
 [00:12.34]第一行歌詞
 [00:16.00]第二行歌詞
 ```
+
+#### Sync accuracy
+
+Import requests Whisper's `timestamp_granularities: ["word", "segment"]`
+(OpenAI API path only — the local `whisper` CLI fallback stays segment-level)
+and anchors each lyric line to its first word's actual start time rather than
+the segment's start, which often includes a little leading silence. If a
+song's sync still feels slightly off after import, use the **歌詞偏移**
+slider in `/control`'s KTV section while the song is playing — it shifts the
+whole song's timing by up to ±2000ms in real time and saves the value to that
+song's catalog entry, so it's remembered for future plays without
+re-importing.
 
 ### LLM lyrics rewrite
 
@@ -356,9 +387,11 @@ relaunch.
 | `AI 未開始` badge stays after tapping 開始 | Mic permission denied | Check browser permissions |
 | Transcript never appears on projection | `/projection` not connected to bus | Refresh `/projection` page |
 | `MediaPipe: model not found` | Missing `.task` file | Run `python -c "from processors.yolo_detector import _ensure_model; _ensure_model()"` in venv |
-| LRC lyrics not syncing | LRC timestamps mismatch | Adjust `lrcOffset` in `songs/index.json` (seconds) |
+| LRC lyrics not syncing | Whisper timing slightly off for that song | Use the 歌詞偏移 slider in `/control`'s KTV section while the song plays — no need to hand-edit `songs/index.json` |
 | KTV auto-rewrite not working | Auto-rewrite disabled | Enable KTV 自動改寫 in `/control` → `系統設定` |
 | NDI stream not visible | NDI SDK not installed | Download from ndi.video, then `pip install ndi-python` |
+| 搜尋並匯入歌曲 search returns no results / errors | `yt-dlp` not installed, or YouTube rate-limiting | `brew install yt-dlp`; if already installed, `brew upgrade yt-dlp` (YouTube changes break older versions) |
+| Song import stuck on `轉錄歌詞中…` | No OpenAI key and no local `whisper` installed | Add an OpenAI key in `系統設定`, or `pip install openai-whisper` for the local fallback |
 | Projection fullscreen toggle only hides the menu bar, doesn't resize | Fixed — uses platform-native `setFullScreen()`, not kiosk mode (kiosk had known Electron/macOS reliability bugs) | Update to latest; if still stuck, check the Electron main-process console for `[main] projection fullscreen →` log lines |
 | Saving an AI character preset silently does nothing in the packaged app | Fixed — Electron does not implement `window.prompt()` at all; preset naming now uses an in-page modal | Update to latest; verify in the actual `.app`, not just a browser tab, since `window.prompt()` works fine in a regular browser but throws in Electron |
 | Gemini Live disconnects every time a parameter changes | Expected, not a bug — Gemini's public Live API has no live-update mechanism at all, so any parameter change reconnects | Confirm the console shows a clean `1000` close, not `1007 Request contains an invalid argument`, which would indicate a regression |
@@ -395,7 +428,10 @@ ourT/
       provider-catalog.js       # Voice catalogs + live OpenAI/Gemini model fetching
       settings.js                # Runtime settings + character preset persistence
       weather.js                # OpenMeteo fetch (Chiayi)
-      song-queue.js             # KTV queue
+      song-queue.js             # KTV queue + catalog read/write (addSongToCatalog, updateSongOffset)
+      song-importer.js          # Shared import pipeline: yt-dlp download + word-refined Whisper LRC
+      lyrics-sync.js            # Pure LRC timestamp/offset logic (unit-tested)
+      youtube-search.js         # yt-dlp ytsearch wrapper, no API key needed
     public/
       control/index.html        # Operator control panel
       control/pcm-processor.js  # AudioWorklet (mic PCM16)
@@ -405,7 +441,7 @@ ourT/
     rag/                        # RAG context docs for LLM lyrics rewrite
     scripts/
       generate-lyrics.js        # Pre-generate LLM lyrics variants (CLI)
-      import-song.js            # yt-dlp + Whisper song import (CLI)
+      import-song.js            # CLI wrapper around lib/song-importer.js
   app2-yolo/                    # Python YOLO camera
     app.py                      # PyQt6 standalone GUI (+ embedded FastAPI)
     main.py                     # Headless FastAPI web server

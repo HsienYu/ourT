@@ -10,7 +10,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const CATALOG_PATH = path.join(__dirname, '../../songs/index.json');
+// Overridable for tests (OURT_SONGS_CATALOG_PATH) so unit tests never touch
+// the real songs/index.json — same pattern as OURT_SETTINGS_PATH in settings.js.
+const CATALOG_PATH = process.env.OURT_SONGS_CATALOG_PATH || path.join(__dirname, '../../songs/index.json');
 
 let queue = [];       // Array of song request objects
 let nowPlaying = null;
@@ -31,6 +33,40 @@ function loadCatalog() {
 
 function getCatalog() {
   return loadCatalog();
+}
+
+function saveCatalog(catalog) {
+  fs.writeFileSync(CATALOG_PATH, JSON.stringify(catalog, null, 2), 'utf8');
+}
+
+/**
+ * Append a new song entry to the catalog (idempotent by id).
+ * @param {object} entry - full catalog entry, must include `id`
+ * @returns {object[]} the updated catalog
+ */
+function addSongToCatalog(entry) {
+  const catalog = loadCatalog();
+  if (!catalog.find((s) => s.id === entry.id)) {
+    catalog.push(entry);
+    saveCatalog(catalog);
+  }
+  return catalog;
+}
+
+/**
+ * Update a song's lrcOffset (seconds), used by the live "歌詞偏移" rehearsal
+ * control in /control to fine-tune sync without re-importing.
+ * @param {string} songId
+ * @param {number} lrcOffset - seconds, positive delays lyrics
+ * @returns {object|null} the updated song entry, or null if not found
+ */
+function updateSongOffset(songId, lrcOffset) {
+  const catalog = loadCatalog();
+  const song = catalog.find((s) => s.id === songId);
+  if (!song) return null;
+  song.lrcOffset = lrcOffset;
+  saveCatalog(catalog);
+  return song;
 }
 
 function enqueue(songId, requesterLabel) {
@@ -83,4 +119,7 @@ function clearQueue() {
   }
 }
 
-module.exports = { init, getCatalog, enqueue, dequeue, endSong, getQueue, clearQueue };
+module.exports = {
+  init, getCatalog, enqueue, dequeue, endSong, getQueue, clearQueue,
+  addSongToCatalog, updateSongOffset,
+};

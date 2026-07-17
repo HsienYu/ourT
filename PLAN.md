@@ -337,3 +337,79 @@ and signed.
 - [todo] If `測試輸出` (speaker test, which needs no entitlement at all) is
   still separately broken after this fix, that has a different root cause —
   report the exact error/status text so it can be diagnosed further
+
+## Phase 11 — KTV: Song Search/Import + Sync Accuracy [active]
+
+User asked about Spotify integration for song discovery + lyrics, given most
+songs are Taiwanese. Researched Spotify's current (2026) developer terms in
+depth: audio streaming for a theatre performance is legally blocked
+(*"Spotify content may not be used to facilitate public or commercial
+playback"*, confirmed by Spotify staff directly), there is no public lyrics
+API at all (confirmed 403/staff response), and even personal-use streaming
+requires every device to have Premium and prohibits synchronizing external
+content with playback — exactly what the karaoke wipe effect does. Metadata
+search (`GET /search?market=TW`) would have worked but was descoped by the
+user in favor of trying YouTube search first (`yt-dlp`'s built-in `ytsearch`,
+no API key needed) — deferred, not rejected; can be added later as an
+additional metadata/cover-art source without touching the audio pipeline.
+
+Scoped down to Phase 2 only per user's choice: sync accuracy improvements
+and a YouTube search/import UI, no Spotify/Musixmatch integration.
+
+- [done] Extracted pure LRC/timestamp logic into `server/lib/lyrics-sync.js`
+  (`formatLrcTimestamp`, `parseLrc`, `toLrc`, `segmentsToLrc`,
+  `refineSegmentTimestamps`, `applyLrcOffset`) — unit tested in isolation
+- [done] Fixed a latent centisecond-rounding carry-over bug while making
+  `formatLrcTimestamp` testable: a value like 59.999s previously rounded to
+  the malformed `[00:59.100]` (3-digit ms field) instead of correctly
+  carrying into `[01:00.00]` — same root formula existed in the original
+  `segmentsToLrc`, just never caught because it wasn't unit tested before
+- [done] Word-level Whisper timestamps: `import-song.js` (via the new shared
+  `server/lib/song-importer.js`) now requests
+  `timestamp_granularities: ["word", "segment"]` and uses
+  `refineSegmentTimestamps()` to anchor each lyric line to its first word's
+  actual start time rather than the segment's start time (which often
+  includes leading silence/breath padding) — directly answers the user's
+  "how to make Whisper sync more accurate" question, no new dependency
+- [done] Refactored the import pipeline: `server/scripts/import-song.js` is
+  now a thin CLI wrapper around `song-importer.js`'s `importSong()`, so the
+  CLI and the new HTTP import endpoint share exactly one implementation
+  (previously would have been duplicated)
+- [done] `server/lib/youtube-search.js`: YouTube search via `yt-dlp`'s
+  `ytsearch:` prefix — no YouTube Data API key/registration needed
+- [done] New endpoints: `GET /api/songs/search`, `POST /api/songs/import` +
+  `GET /api/songs/import/:jobId` (async job polling — download+transcribe
+  takes 30-90s), `PATCH /api/songs/:id/offset`
+- [done] Centralized catalog writes into `server/lib/song-queue.js`
+  (`addSongToCatalog`, `updateSongOffset`) — previously each caller read/wrote
+  `songs/index.json` independently; added `OURT_SONGS_CATALOG_PATH` env
+  override for test isolation (mirrors `OURT_SETTINGS_PATH` in settings.js)
+- [done] New `/control` UI: 搜尋並匯入歌曲 search box + result list with
+  thumbnails, one-click import with async progress polling; 歌詞偏移 live
+  offset slider (±2000ms, debounced) shown while a song is playing, resets
+  per-song, persists to the catalog
+- [done] Cleaned up a pre-existing duplicate `/api/songs/:id/cover` route
+  registration found while adding the new song routes nearby
+- [done] Projection applies `lrcOffset` live: `ktv.offset.update` bus event
+  updates the currently-playing song's effective sync offset without
+  interrupting playback or reloading lyrics
+- [done] Unit tests: `lyrics-sync.test.js`, `youtube-search.test.js`,
+  `song-queue.test.js` — 65 tests total across the whole suite, all passing.
+  Verified live end-to-end against real `yt-dlp`: search for "周杰倫 稻香"
+  returned real YouTube results with thumbnails in the actual `/control` UI;
+  the offset PATCH endpoint and projection sync-offset math were verified
+  live in-browser (positive offset measurably delays line triggering,
+  negative advances it, clamped at 0)
+- [done] `tests/manual/app3-ktv.md` extended: search/import UI section,
+  live offset-tuning section, updated CLI import section to reflect the
+  shared-pipeline refactor
+- [todo] Manual end-to-end verification of a full real import (download +
+  Whisper transcription + catalog update) through the `/control` UI, ideally
+  once with an OpenAI key configured (word-level path) and once without
+  (local whisper fallback, segment-level only)
+- [todo] Rehearsal verification that `refineSegmentTimestamps` measurably
+  improves perceived sync quality on a real song, not just unit-level
+  correctness
+- [todo] Revisit Spotify (metadata/cover-art only, not audio/lyrics) or
+  Musixmatch as an additional source if YouTube-only search/import proves
+  insufficient for song discovery or cover-art quality

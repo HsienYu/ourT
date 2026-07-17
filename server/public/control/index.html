@@ -111,6 +111,22 @@
   .preset-row .preset-btn:hover { color: var(--text); border-color: var(--text); }
   .preset-row .preset-btn.danger:hover { color: var(--active); border-color: var(--active); }
 
+  /* ── Song search results ── */
+  .search-result-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .search-result-row {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border); padding: 6px;
+  }
+  .search-result-row img {
+    width: 48px; height: 48px; object-fit: cover; flex-shrink: 0; background: #000;
+  }
+  .search-result-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .search-result-title {
+    font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .search-result-meta { font-size: 9px; color: var(--muted); }
+  .search-result-row .btn { flex-shrink: 0; font-size: 9px; padding: 6px 8px; }
+
   /* ── Custom modal (replaces unsupported window.prompt() / native confirm) ── */
   .modal-overlay {
     position: fixed; inset: 0; z-index: 200;
@@ -495,6 +511,22 @@
     <div class="weather-box" id="weather-box">讀取中⋯</div>
   </div>
 
+  <!-- ── SONG SEARCH + IMPORT ── -->
+  <div class="section">
+    <div class="section-title">搜尋並匯入歌曲 / Search &amp; Import (YouTube)</div>
+    <div class="param">
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="song-search-input" placeholder="輸入歌名或歌手，例如：周杰倫 稻香"
+          style="flex:1;background:#000;border:1px solid var(--border);color:var(--text);
+                 font-family:monospace;font-size:12px;padding:7px 10px;outline:none;"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();searchSongs();}">
+        <button class="btn primary" type="button" onclick="searchSongs()">搜尋</button>
+      </div>
+    </div>
+    <div class="search-result-list" id="song-search-results"></div>
+    <div style="font-size:9px;color:var(--muted);" id="song-import-status">—</div>
+  </div>
+
   <!-- ── KTV SECTION ── -->
   <div class="section">
     <div class="section-title">KTV 點歌佇列 / Song Queue</div>
@@ -508,6 +540,15 @@
     </div>
     <div class="btn-row">
       <button class="btn" id="lyric-style-btn" onclick="toggleLyricStyle()">歌詞模式：整行</button>
+    </div>
+    <!-- Live rehearsal sync tuning — only meaningful while a song is playing -->
+    <div class="param" id="lyric-offset-row" style="display:none;">
+      <div class="param-header">
+        <div class="param-label">歌詞偏移 <span>Lyric Offset — 即時微調同步</span></div>
+        <div class="param-value" id="lyric-offset-value">0 ms</div>
+      </div>
+      <input type="range" min="-2000" max="2000" step="100" value="0" id="lyric-offset-slider"
+        oninput="onLyricOffsetInput(this.value)">
     </div>
   </div>
 
@@ -1388,6 +1429,163 @@ function renderQueue(queue) {
   });
 
   el.innerHTML = rows.length ? rows.join('') : '<div style="color:var(--muted);font-size:11px">暫無點歌</div>';
+  updateLyricOffsetRow(queue.nowPlaying);
+}
+
+// ── Live lyric offset (rehearsal sync tuning) ──────────────────────────────
+let lyricOffsetSongId = null;
+let lyricOffsetDebounceTimer = null;
+
+function updateLyricOffsetRow(nowPlaying) {
+  const row = document.getElementById('lyric-offset-row');
+  if (!nowPlaying) {
+    row.style.display = 'none';
+    lyricOffsetSongId = null;
+    return;
+  }
+  row.style.display = '';
+  const songId = nowPlaying.song.id;
+  if (songId !== lyricOffsetSongId) {
+    // New song started playing — reset the slider to that song's saved offset.
+    lyricOffsetSongId = songId;
+    const offsetMs = Math.round((nowPlaying.song.lrcOffset || 0) * 1000);
+    document.getElementById('lyric-offset-slider').value = offsetMs;
+    document.getElementById('lyric-offset-value').textContent = offsetMs + ' ms';
+  }
+}
+
+function onLyricOffsetInput(msValue) {
+  document.getElementById('lyric-offset-value').textContent = msValue + ' ms';
+  clearTimeout(lyricOffsetDebounceTimer);
+  lyricOffsetDebounceTimer = setTimeout(() => pushLyricOffset(msValue), 300);
+}
+
+async function pushLyricOffset(msValue) {
+  if (!lyricOffsetSongId) return;
+  const offsetSeconds = Number(msValue) / 1000;
+  try {
+    const res = await fetch(`/api/songs/${encodeURIComponent(lyricOffsetSongId)}/offset`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lrcOffset: offsetSeconds }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || '更新失敗');
+    log(`歌詞偏移已更新：${msValue} ms`);
+  } catch (error) {
+    log('歌詞偏移更新失敗：' + error.message);
+  }
+}
+
+// ── Song search + import (YouTube via yt-dlp, no API key) ─────────────────
+async function searchSongs() {
+  const input = document.getElementById('song-search-input');
+  const query = input.value.trim();
+  const statusEl = document.getElementById('song-import-status');
+  const resultsEl = document.getElementById('song-search-results');
+  if (!query) return;
+
+  statusEl.textContent = '搜尋中…';
+  resultsEl.innerHTML = '';
+  try {
+    const res = await fetch(`/api/songs/search?q=${encodeURIComponent(query)}`);
+    const results = await res.json();
+    if (!res.ok) throw new Error(results.error || '搜尋失敗');
+    renderSearchResults(results);
+    statusEl.textContent = results.length ? `找到 ${results.length} 筆結果` : '沒有找到結果';
+  } catch (error) {
+    statusEl.textContent = '搜尋失敗：' + error.message;
+  }
+}
+
+function renderSearchResults(results) {
+  const resultsEl = document.getElementById('song-search-results');
+  resultsEl.innerHTML = '';
+  results.forEach((r) => {
+    const row = document.createElement('div');
+    row.className = 'search-result-row';
+
+    const img = document.createElement('img');
+    img.src = r.thumbnailUrl || '';
+    img.alt = '';
+
+    const info = document.createElement('div');
+    info.className = 'search-result-info';
+    const durationLabel = r.durationSeconds
+      ? `${Math.floor(r.durationSeconds / 60)}:${String(r.durationSeconds % 60).padStart(2, '0')}`
+      : '—';
+    info.innerHTML = `<div class="search-result-title">${escapeHtmlText(r.title)}</div>` +
+      `<div class="search-result-meta">${escapeHtmlText(r.channel || '')} · ${durationLabel}</div>`;
+
+    const importBtn = document.createElement('button');
+    importBtn.className = 'btn primary';
+    importBtn.type = 'button';
+    importBtn.textContent = '匯入';
+    importBtn.onclick = () => importSelectedSong(r, importBtn);
+
+    row.append(img, info, importBtn);
+    resultsEl.appendChild(row);
+  });
+}
+
+async function importSelectedSong(result, btn) {
+  const artist = await customPrompt('歌手／演出者名稱（可留空）：', result.channel || '');
+  if (artist === null) return; // cancelled
+  const title = await customPrompt('歌曲標題：', result.title);
+  if (title === null) return;
+
+  const statusEl = document.getElementById('song-import-status');
+  btn.disabled = true;
+  btn.textContent = '匯入中…';
+  statusEl.textContent = '啟動匯入…';
+
+  try {
+    const res = await fetch('/api/songs/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId: result.videoId, title, artist, tags: [] }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || '匯入啟動失敗');
+    log(`開始匯入：${title} — ${artist}`);
+    await pollImportJob(json.jobId, statusEl, btn);
+  } catch (error) {
+    statusEl.textContent = '匯入失敗：' + error.message;
+    btn.disabled = false;
+    btn.textContent = '匯入';
+  }
+}
+
+function pollImportJob(jobId, statusEl, btn) {
+  return new Promise((resolve) => {
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/songs/import/${encodeURIComponent(jobId)}`);
+        const job = await res.json();
+        statusEl.textContent = job.message || job.status;
+        if (job.status === 'done') {
+          log('匯入完成：' + job.songId);
+          btn.textContent = '✓ 已匯入';
+          resolve();
+          return;
+        }
+        if (job.status === 'error') {
+          log('匯入失敗：' + job.message);
+          btn.disabled = false;
+          btn.textContent = '重試匯入';
+          resolve();
+          return;
+        }
+        setTimeout(poll, 1500);
+      } catch (error) {
+        statusEl.textContent = '狀態查詢失敗：' + error.message;
+        btn.disabled = false;
+        btn.textContent = '匯入';
+        resolve();
+      }
+    };
+    poll();
+  });
 }
 
 // ── Weather render ────────────────────────────────────────────────────────────
