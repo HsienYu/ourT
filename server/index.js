@@ -113,6 +113,11 @@ app.post('/api/queue/end', (req, res) => {
   res.json({ ok: true, item });
 });
 
+app.post('/api/queue/skip', (req, res) => {
+  const result = songQueue.skip();
+  res.json({ ok: !!result, ...result });
+});
+
 app.post('/api/queue/clear', (req, res) => {
   songQueue.clearQueue();
   res.json({ ok: true });

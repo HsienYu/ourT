@@ -413,3 +413,29 @@ and a YouTube search/import UI, no Spotify/Musixmatch integration.
 - [todo] Revisit Spotify (metadata/cover-art only, not audio/lyrics) or
   Musixmatch as an additional source if YouTube-only search/import proves
   insufficient for song discovery or cover-art quality
+
+## Phase 12 — KTV Live Controls + Packaged Build Expiry [active]
+
+User reported that songs imported from `/control` did not show in already-open
+song lists, requested explicit real-KTV `播放` / `切歌` controls, and requested
+that distributed builds remain usable through 2026-09-01 only. This phase uses
+TDD for queue and expiry logic; live playback and packaged-app cutoff require
+manual verification.
+
+- [done] Broadcast `catalog.updated` when a newly imported song is persisted;
+  audience and control views refresh their catalog without reloading
+- [done] Add explicit `播放` and `切歌` controls; 切歌 stops the current item and
+  immediately starts the next queued item, or stops projection playback when
+  no next item exists
+- [done] Broadcast `queue.updated` after natural completion so all operator
+  controls reflect the cleared current-song state
+- [done] Enforce packaged-build expiry at local 2026-09-02 00:00 (allowing all
+  of 2026-09-01); expiry prevents startup and closes a still-running packaged
+  App, while development startup remains available
+- [done] Unit tests cover catalog broadcasts, end/skip transitions, expiry
+  boundary, packaged-only policy, and bounded expiry scheduling
+- [todo] Manual KTV verification: complete a real import with audience/control
+  pages already open, then verify 播放, 切歌 to next song, and 切歌 with an empty queue
+- [todo] Manual packaged-app verification: launch before expiry and confirm
+  windows open; verify expiry dialog/no server startup after cutoff and auto-quit
+  when crossing the cutoff

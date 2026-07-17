@@ -19,6 +19,7 @@ const path      = require('path');
 const os        = require('os');
 const fs        = require('fs');
 const { WebSocket } = require('ws'); // main process is plain Node — no browser globals
+const { isBuildExpired, nextExpiryCheckDelay } = require('./build-expiry');
 
 // ── Paths ──────────────────────────────────────────────────────────────────────
 // In development: resources live at ../../server relative to this file.
@@ -41,22 +42,43 @@ let tray           = null;
 let projectionWin  = null;
 let monitorWin     = null;
 let controlWin     = null;
+let expiryTimer    = null;
 
 // ── App ready ──────────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
+  if (exitIfBuildExpired()) return;
   ensureSettingsDirectory();
   await startServer();
   openWindows();
   connectBus();
   createTray();
+  scheduleExpiryCheck();
 });
 
 app.on('before-quit', () => {
+  clearTimeout(expiryTimer);
   if (serverProcess) {
     serverProcess.kill('SIGTERM');
     serverProcess = null;
   }
 });
+
+function exitIfBuildExpired() {
+  if (!isBuildExpired(IS_PACKAGED)) return false;
+  const { dialog } = require('electron');
+  dialog.showErrorBox('ourT 已到期', '此版本的使用期限已於 2026 年 9 月 1 日結束，無法繼續執行。');
+  app.quit();
+  return true;
+}
+
+function scheduleExpiryCheck() {
+  if (!IS_PACKAGED) return;
+  const delay = nextExpiryCheckDelay();
+  expiryTimer = setTimeout(() => {
+    if (exitIfBuildExpired()) return;
+    scheduleExpiryCheck();
+  }, delay);
+}
 
 // On macOS clicking the dock icon when all windows are closed re-opens them
 app.on('activate', () => {

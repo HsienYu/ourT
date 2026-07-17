@@ -151,6 +151,8 @@ shown), tap **匯入**. No YouTube API key or registration needed — search use
 lyrics with word-level-refined timestamps (see Sync accuracy below), and adds
 the song to the catalog automatically. Import runs in the background
 (30–90s); the button shows live progress and switches to `✓ 已匯入` when done.
+Open audience and control pages receive the new song immediately; no server or
+page restart is required.
 
 **On Spotify:** direct audio streaming/synchronized lyrics from Spotify are
 not usable here — Spotify's developer terms explicitly prohibit using their
@@ -228,10 +230,11 @@ Claude reads them before every rewrite to align the lyrics with the show's artis
 
 1. Audience requests songs on `/audience`
 2. Queue appears in operator panel
-3. Tap **播放下一首** to play
-4. Toggle **歌詞模式：整行 / 掃光** for line-highlight vs karaoke wipe
-5. **Lyrics Editor** section: select variant, generate with LLM, or edit LRC directly and push to projection
-6. Tap **他點這首歌有什麼樣的傾向？** (operator or audience) for Claude analysis overlay
+3. Tap **播放** to start the next request
+4. Tap **切歌** to stop the current song and immediately start the next request; it stops playback when the queue is empty
+5. Toggle **歌詞模式：整行 / 掃光** for line-highlight vs karaoke wipe
+6. **Lyrics Editor** section: select variant, generate with LLM, or edit LRC directly and push to projection
+7. Tap **他點這首歌有什麼樣的傾向？** (operator or audience) for Claude analysis overlay
 
 ### KTV variant wipe colours
 
@@ -326,6 +329,11 @@ and **not notarized** — macOS Gatekeeper will warn on first launch; right-clic
 → Open once to bypass. If `codesign` fails with *"A timestamp was expected but
 was not found"*, that's a transient Apple timestamp-server issue — just
 re-run `npm run build`.
+
+Packaged builds remain usable through **2026-09-01** in the Mac's local time.
+At `2026-09-02 00:00`, the packaged App shows an expiry message and quits; an
+App still open at that time also quits. Development startup (`npm start`) is
+not restricted so the project remains maintainable.
 
 `ourT-electron/dist/` is git-ignored and should never be committed or shared
 as-is (see Security note below).

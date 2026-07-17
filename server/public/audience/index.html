@@ -126,7 +126,7 @@ async function loadCatalog() {
   } catch {
     catalog = [];
   }
-  renderSongs(catalog);
+  filterSongs(document.getElementById('search-input').value);
 }
 
 function filterSongs(query) {
@@ -199,6 +199,14 @@ async function triggerAnalyze() {
 // ── Bus connection (to receive queue updates) ─────────────────────────────────
 function connectBus() {
   bus = new WebSocket(`ws://${location.host}/ws/bus?role=audience`);
+  bus.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data);
+      if (message.type === 'catalog.updated') loadCatalog();
+    } catch {
+      // Ignore malformed bus messages and preserve the current catalog.
+    }
+  };
   bus.onclose = () => setTimeout(connectBus, 4000);
 }
 

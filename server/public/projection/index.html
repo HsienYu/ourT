@@ -623,6 +623,12 @@ function handleBusMessage(msg) {
       break;
 
     case 'ktv.ended':
+      document.getElementById('ktv-audio').pause();
+      document.getElementById('ktv-audio').removeAttribute('src');
+      document.getElementById('ktv-audio').load();
+      currentSongId = null;
+      lrcLines = [];
+      currentLineIndex = -1;
       if (wipeRaf) { cancelAnimationFrame(wipeRaf); wipeRaf = null; }
       document.getElementById('ktv-view').style.removeProperty('--cover-url');
       setMode('ai');

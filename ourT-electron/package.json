@@ -66,6 +66,7 @@
     ],
     "files": [
       "main.js",
+      "build-expiry.js",
       "assets/**"
     ]
   },

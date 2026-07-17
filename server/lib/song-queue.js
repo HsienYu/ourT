@@ -49,6 +49,9 @@ function addSongToCatalog(entry) {
   if (!catalog.find((s) => s.id === entry.id)) {
     catalog.push(entry);
     saveCatalog(catalog);
+    if (broadcast) {
+      broadcast.toAll({ type: 'catalog.updated', catalog });
+    }
   }
   return catalog;
 }
@@ -103,8 +106,26 @@ function endSong() {
   nowPlaying = null;
   if (broadcast) {
     broadcast.toAll({ type: 'ktv.ended', item: finished });
+    broadcast.toAll({ type: 'queue.updated', queue: getQueue() });
   }
   return finished;
+}
+
+/**
+ * Skip the current song and immediately advance to the next request when
+ * available. This produces one authoritative queue state for all clients.
+ * @returns {{ finished: object, item: object|null }|null}
+ */
+function skip() {
+  if (!nowPlaying) return null;
+  const finished = nowPlaying;
+  nowPlaying = queue.shift() || null;
+  if (broadcast) {
+    broadcast.toAll({ type: 'queue.updated', queue: getQueue() });
+    if (nowPlaying) broadcast.toProjection({ type: 'ktv.play', item: nowPlaying });
+    else broadcast.toAll({ type: 'ktv.ended', item: finished });
+  }
+  return { finished, item: nowPlaying };
 }
 
 function getQueue() {
@@ -120,6 +141,6 @@ function clearQueue() {
 }
 
 module.exports = {
-  init, getCatalog, enqueue, dequeue, endSong, getQueue, clearQueue,
+  init, getCatalog, enqueue, dequeue, endSong, skip, getQueue, clearQueue,
   addSongToCatalog, updateSongOffset,
 };

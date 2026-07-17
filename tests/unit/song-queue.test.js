@@ -35,6 +35,20 @@ test('addSongToCatalog — appends a new entry and persists to disk', () => {
   assert.equal(onDisk[0].id, 'song-1');
 });
 
+test('addSongToCatalog — broadcasts catalog.updated only when the catalog changes', () => {
+  const { songQueue } = freshSongQueueModule([]);
+  const events = [];
+  songQueue.init({ toAll: (event) => events.push(event) });
+
+  songQueue.addSongToCatalog({ id: 'song-1', title: 'A' });
+  songQueue.addSongToCatalog({ id: 'song-1', title: 'duplicate attempt' });
+
+  assert.deepEqual(events, [{
+    type: 'catalog.updated',
+    catalog: [{ id: 'song-1', title: 'A' }],
+  }]);
+});
+
 test('addSongToCatalog — is idempotent by id (does not duplicate)', () => {
   const { songQueue } = freshSongQueueModule([{ id: 'song-1', title: 'existing' }]);
   const catalog = songQueue.addSongToCatalog({ id: 'song-1', title: 'duplicate attempt' });
@@ -60,4 +74,69 @@ test('updateSongOffset — accepts negative offsets', () => {
   const { songQueue } = freshSongQueueModule([{ id: 'song-1', lrcOffset: 0 }]);
   const updated = songQueue.updateSongOffset('song-1', -0.5);
   assert.equal(updated.lrcOffset, -0.5);
+});
+
+test('endSong — clears now playing and broadcasts the authoritative queue state', () => {
+  const { songQueue } = freshSongQueueModule([{ id: 'song-1', title: 'A' }]);
+  const events = [];
+  songQueue.init({ toAll: (event) => events.push(event), toProjection: (event) => events.push(event) });
+  songQueue.enqueue('song-1', '觀眾');
+  songQueue.dequeue();
+  events.length = 0;
+
+  const finished = songQueue.endSong();
+
+  assert.equal(finished.song.id, 'song-1');
+  assert.deepEqual(songQueue.getQueue(), { nowPlaying: null, upcoming: [] });
+  assert.deepEqual(events, [
+    { type: 'ktv.ended', item: finished },
+    { type: 'queue.updated', queue: { nowPlaying: null, upcoming: [] } },
+  ]);
+});
+
+test('skip — stops the current song and immediately plays the next queued song', () => {
+  const { songQueue } = freshSongQueueModule([
+    { id: 'song-1', title: 'A' },
+    { id: 'song-2', title: 'B' },
+  ]);
+  const events = [];
+  songQueue.init({ toAll: (event) => events.push(event), toProjection: (event) => events.push(event) });
+  songQueue.enqueue('song-1', '觀眾');
+  songQueue.enqueue('song-2', '觀眾');
+  songQueue.dequeue();
+  events.length = 0;
+
+  const result = songQueue.skip();
+
+  assert.equal(result.finished.song.id, 'song-1');
+  assert.equal(result.item.song.id, 'song-2');
+  assert.equal(songQueue.getQueue().nowPlaying.song.id, 'song-2');
+  assert.deepEqual(events, [
+    { type: 'queue.updated', queue: { nowPlaying: result.item, upcoming: [] } },
+    { type: 'ktv.play', item: result.item },
+  ]);
+});
+
+test('skip — ends playback when there is no next song', () => {
+  const { songQueue } = freshSongQueueModule([{ id: 'song-1', title: 'A' }]);
+  const events = [];
+  songQueue.init({ toAll: (event) => events.push(event), toProjection: (event) => events.push(event) });
+  songQueue.enqueue('song-1', '觀眾');
+  songQueue.dequeue();
+  events.length = 0;
+
+  const result = songQueue.skip();
+
+  assert.equal(result.finished.song.id, 'song-1');
+  assert.equal(result.item, null);
+  assert.deepEqual(songQueue.getQueue(), { nowPlaying: null, upcoming: [] });
+  assert.deepEqual(events, [
+    { type: 'queue.updated', queue: { nowPlaying: null, upcoming: [] } },
+    { type: 'ktv.ended', item: result.finished },
+  ]);
+});
+
+test('skip — does nothing when no song is playing', () => {
+  const { songQueue } = freshSongQueueModule([]);
+  assert.equal(songQueue.skip(), null);
 });

@@ -30,11 +30,13 @@ Record results and evidence in the Evidence column.
 |---|---|---|
 | Tap 點歌 for a song on phone | Toast: 已加入：[title] | |
 | Queue updates on operator panel | Song appears in KTV 點歌佇列 | |
-| Tap 播放下一首 on operator panel | Projection switches to KTV mode | |
+| Tap 播放 on operator panel | Projection switches to KTV mode | |
 | Song title and artist shown | Large text, accent colour | |
 | Audio plays | Sound audible from speaker | |
 | Lyrics appear and sync | Active line highlighted, changes with music | |
 | Progress bar fills | Thin bar at bottom grows left to right | |
+| With another request queued, tap 切歌 | Current audio stops and the next song immediately starts on projection | |
+| Tap 切歌 with no next request | Current audio stops, projection leaves KTV mode, and queue shows no current song | |
 
 ---
 
@@ -114,7 +116,7 @@ node scripts/import-song.js \
 | LRC generated | `songs/lyrics/<id>.lrc` exists with timestamps | |
 | Console shows transcription method | `已透過 OpenAI Whisper API 轉錄（含逐字時間戳記）` if an OpenAI key is configured, or `已透過本機 whisper 轉錄` otherwise | |
 | Catalog updated | Song appears in `songs/index.json` | |
-| Song available in audience page | Listed after server restart | |
+| Song available in audience page | Listed without server restart or page reload | |
 
 ---
 
@@ -131,7 +133,7 @@ search (`ytsearch:`).
 | Cancel either prompt | Import does not start | |
 | Confirm both prompts | Button shows `匯入中…`, status line shows progress messages (下載音訊中… → 轉錄歌詞中… → 已加入歌曲目錄) | |
 | Wait for completion | Button shows `✓ 已匯入`, status shows `完成` | |
-| Refresh the KTV Lyrics Editor song selector | Newly imported song appears | |
+| Wait for completion while `/audience` and the KTV Lyrics Editor are open | Newly imported song appears in both places without a page reload | |
 | Trigger a yt-dlp failure (e.g. search for a private/deleted video's ID) | Status shows the actual error message, button re-enables as `重試匯入` | |
 
 ---
