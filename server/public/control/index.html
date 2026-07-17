@@ -529,7 +529,10 @@
 
   <!-- ── KTV SECTION ── -->
   <div class="section">
-    <div class="section-title">KTV 點歌佇列 / Song Queue</div>
+    <div class="section-title" style="display:flex;align-items:center;gap:8px;">
+      KTV 點歌佇列 / Song Queue
+      <span id="projection-badge" class="conn-badge error" style="font-size:9px;padding:2px 7px;margin-left:auto;">投影未連線</span>
+    </div>
     <div class="queue-list" id="queue-list">
       <div style="color:var(--muted);font-size:11px">暫無點歌</div>
     </div>
@@ -723,6 +726,9 @@ function handleBusMessage(msg) {
     case 'catalog.updated':
       initLyricsEditor();
       log('歌曲目錄已更新');
+      break;
+    case 'projection.status':
+      updateProjectionBadge(msg.connected);
       break;
     case 'bus.welcome':
       log(`角色：${msg.role}`);
@@ -1385,6 +1391,13 @@ function clearTranscript() {
 }
 
 // ── KTV ───────────────────────────────────────────────────────────────────────
+function updateProjectionBadge(connected) {
+  const badge = document.getElementById('projection-badge');
+  if (!badge) return;
+  badge.className = 'conn-badge ' + (connected ? 'connected' : 'error');
+  badge.textContent = connected ? '投影已連線' : '投影未連線';
+}
+
 async function playNext() {
   const btn = document.getElementById('play-song-btn');
   try {
@@ -1392,6 +1405,9 @@ async function playNext() {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || '播放失敗');
     log('播放：' + json.item?.song?.title);
+    if (json.projectionConnected === false) {
+      log('⚠ 投影畫面尚未連線 — 投影連線後將自動開始播放');
+    }
     flashQueueButton(btn, '✓ 播放中', 1500);
   } catch (error) {
     log('無法播放：' + error.message);

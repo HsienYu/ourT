@@ -109,15 +109,16 @@ app.post('/api/queue/enqueue', (req, res) => {
 });
 
 app.post('/api/queue/play', (req, res) => {
-  if (!hasBusClient('projection')) {
-    return res.status(409).json({ ok: false, error: '投影畫面尚未連線，請先開啟 Projection 視窗' });
-  }
   if (songQueue.getQueue().nowPlaying) {
     return res.status(409).json({ ok: false, error: '已有歌曲正在播放，請使用切歌或等待歌曲結束' });
   }
   const item = songQueue.dequeue();
   if (!item) return res.status(400).json({ ok: false, error: '佇列為空' });
-  return res.json({ ok: true, item });
+  // projectionConnected is informational — the client shows a warning if false,
+  // but play proceeds either way because the reconnect handler replays ktv.play
+  // when projection later connects (see bus connection handler below).
+  const projectionConnected = hasBusClient('projection');
+  return res.json({ ok: true, item, projectionConnected });
 });
 
 app.post('/api/queue/end', (req, res) => {
@@ -524,8 +525,17 @@ wssBus.on('connection', (ws, req) => {
     ws.send(JSON.stringify({ type: 'weather.update', weather: w, prompt: formatForPrompt(w) }));
   });
   ws.send(JSON.stringify({ type: 'queue.updated', queue: songQueue.getQueue() }));
+  // When projection (re)connects: replay the current song if one is playing.
   if (role === 'projection' && songQueue.getQueue().nowPlaying) {
     ws.send(JSON.stringify({ type: 'ktv.play', item: songQueue.getQueue().nowPlaying }));
+  }
+  // Notify all operator panels when projection comes online.
+  if (role === 'projection') {
+    broadcast.toControl({ type: 'projection.status', connected: true });
+  }
+  // Tell a newly connected control panel the current projection status.
+  if (role === 'control') {
+    ws.send(JSON.stringify({ type: 'projection.status', connected: hasBusClient('projection') }));
   }
 
   ws.on('message', (raw) => {
@@ -580,7 +590,11 @@ wssBus.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     busClients.delete(ws);
-    console.log(`[bus] Client disconnected: total=${busClients.size}`);
+    console.log(`[bus] Client disconnected: role=${role}, total=${busClients.size}`);
+    // Notify operator panels when the last projection client drops.
+    if (role === 'projection') {
+      broadcast.toControl({ type: 'projection.status', connected: hasBusClient('projection') });
+    }
   });
 });
 

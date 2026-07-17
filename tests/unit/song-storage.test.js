@@ -48,3 +48,16 @@ test('seedSongsDirectory — preserves imported runtime catalog and media on lat
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(runtime, 'index.json'), 'utf8')), [{ id: 'imported' }]);
   assert.equal(fs.readFileSync(path.join(runtime, 'audio', 'imported.mp3'), 'utf8'), 'imported audio');
 });
+
+test('seedSongsDirectory — seeds into existing but catalog-less directory (upgrade from old app)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ourt-song-storage-'));
+  const bundled = path.join(root, 'bundled');
+  const runtime = path.join(root, 'runtime');
+  makeSongsDir(bundled, [{ id: 'seed' }]);
+  // Simulate old app that created the dir but left no catalog
+  fs.mkdirSync(runtime, { recursive: true });
+
+  seedSongsDirectory(bundled, runtime);
+
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(runtime, 'index.json'), 'utf8')), [{ id: 'seed' }]);
+});

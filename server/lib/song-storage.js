@@ -17,9 +17,16 @@ function getCatalogPath() {
   return process.env.OURT_SONGS_CATALOG_PATH || path.join(getSongsDir(), 'index.json');
 }
 
+/**
+ * Copy bundled songs into the writable runtime directory on first launch.
+ * Skips when index.json already exists (user has their own catalog).
+ * Checks the catalog file rather than the directory so that an existing-but-empty
+ * runtime dir (e.g. left over from a previous version) is still seeded correctly.
+ */
 function seedSongsDirectory(bundledSongsDir, runtimeSongsDir) {
-  if (fs.existsSync(runtimeSongsDir)) return;
-  fs.mkdirSync(path.dirname(runtimeSongsDir), { recursive: true });
+  const runtimeCatalog = path.join(runtimeSongsDir, 'index.json');
+  if (fs.existsSync(runtimeCatalog)) return;
+  fs.mkdirSync(runtimeSongsDir, { recursive: true });
   fs.cpSync(bundledSongsDir, runtimeSongsDir, { recursive: true });
 }
 
