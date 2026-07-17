@@ -468,8 +468,8 @@ The previous endpoint marked a queue item as playing before confirming that a
 Projection client was connected, and Projection only received a transient play
 event, leaving it blank after a load/reconnect race.
 
-- [done] Reject Play before queue mutation when no Projection bus client is
-  connected; the control log shows the reason and the queued song remains intact
+- [done] Allow Play before Projection connects; Control displays live Projection
+  status and warns that playback will begin when Projection connects
 - [done] Replay the current `ktv.play` item when Projection connects or reconnects
 - [done] Prevent duplicate Play requests from replacing the active song
 - [done] Keep KTV controls disabled until an authoritative queue state arrives;
@@ -477,3 +477,20 @@ event, leaving it blank after a load/reconnect race.
 - [done] Unit test that a second dequeue preserves the active song and queue order
 - [todo] Manual packaged-app verification: request a song with Projection open,
   press Play, reload Projection mid-song, and confirm audio/lyrics resume
+
+## Phase 15 — Control-Panel Song Selection [active]
+
+User requested direct operator song selection instead of requiring the audience
+page for every playback. This is an operator UI feature using the existing,
+unit-tested queue APIs; end-to-end media behavior remains covered by the KTV
+manual protocol.
+
+- [done] Add a Control catalog selector that refreshes after imports
+- [done] Add 加入佇列 for operator-requested songs
+- [done] Add 播放此歌: queues and starts the selected song when idle; queues it
+  without interrupting an active song otherwise
+- [done] Open or focus the audience song-request popup whenever Control enters
+  KTV mode (Electron uses a reusable native window; browsers use a popup)
+- [todo] Manual packaged-app verification: select, queue, and directly play a
+  catalog song from Control, both while idle and while another song is active;
+  switch into KTV and confirm the Audience popup opens once

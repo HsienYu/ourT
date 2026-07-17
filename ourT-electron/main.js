@@ -45,6 +45,7 @@ let tray           = null;
 let projectionWin  = null;
 let monitorWin     = null;
 let controlWin     = null;
+let audienceWin    = null;
 let expiryTimer    = null;
 
 // ── App ready ──────────────────────────────────────────────────────────────────
@@ -209,6 +210,18 @@ function openControlSettings() {
   }
 }
 
+function openAudienceWindow() {
+  const audienceUrl = base('/audience');
+  if (!audienceWin || audienceWin.isDestroyed()) {
+    audienceWin = createWindow({ title: 'ourT — Audience Song Request', width: 420, height: 760 });
+    audienceWin.loadURL(audienceUrl);
+    audienceWin.on('closed', () => { audienceWin = null; });
+  } else {
+    audienceWin.show();
+    audienceWin.focus();
+  }
+}
+
 function openWindows() {
   // ── Projection: windowed by default, can go fullscreen via tray/control ───────────
   projectionWin = createWindow({
@@ -299,6 +312,10 @@ function createTray() {
         }
       },
     },
+    {
+      label: '開啟觀眾點歌',
+      click: () => openAudienceWindow(),
+    },
     { type: 'separator' },
     {
       label: '複製觀眾點歌網址',
@@ -363,6 +380,9 @@ function connectBus() {
     }
     if (msg.type === 'projection.fullscreen') {
       toggleProjectionFullscreen();
+    }
+    if (msg.type === 'audience.open') {
+      openAudienceWindow();
     }
   };
 

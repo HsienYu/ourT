@@ -556,6 +556,12 @@ wssBus.on('connection', (ws, req) => {
       broadcast.toMain({ type: 'projection.fullscreen' });
     }
 
+    // Control requests the Electron main process to open the audience song
+    // request window when switching into KTV mode.
+    if (msg.type === 'audience.open') {
+      broadcast.toMain({ type: 'audience.open' });
+    }
+
     // Operator triggers KTV AI analysis
     if (msg.type === 'ktv.analyze') {
       broadcast.toProjection({ type: 'ktv.analyze', item: msg.item });

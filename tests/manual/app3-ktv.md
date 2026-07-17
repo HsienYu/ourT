@@ -21,6 +21,11 @@ Record results and evidence in the Evidence column.
 | Open audience page | Songs listed with title and artist | |
 | Search for a song | Filtered results appear | |
 | Song cover image | Appears (or gracefully absent) | |
+| Select a song in 控制台選歌 | The same catalog is available without opening the audience page | |
+| Select a song and tap 加入佇列 | Song appears in the KTV queue with 操作員 as requester | |
+| With no current song, select a song and tap 播放此歌 | Song enters the queue and begins playback | |
+| With a current song, select another song and tap 播放此歌 | New song is queued and the current song is not interrupted | |
+| Switch Control from AI 對話 to KTV | Audience song-request popup opens automatically; switching to KTV again focuses the same popup | |
 
 ---
 
@@ -30,7 +35,7 @@ Record results and evidence in the Evidence column.
 |---|---|---|
 | Tap 點歌 for a song on phone | Toast: 已加入：[title] | |
 | Queue updates on operator panel | Song appears in KTV 點歌佇列 | |
-| Keep Projection closed, then tap 播放 | Control log states `投影畫面尚未連線` and the requested song remains in the queue | |
+| Keep Projection closed, then tap 播放 | Control shows 投影未連線; song enters playback state and starts when Projection connects | |
 | Tap 播放 on operator panel | Projection switches to KTV mode | |
 | Song title and artist shown | Large text, accent colour | |
 | Audio plays | Sound audible from speaker | |
@@ -164,6 +169,8 @@ re-importing the song.
 | During KTV, switch mode to AI on operator panel | Projection crossfades to AI transcript view | |
 | Ask AI a question | AI responds on projection, KTV audio stops | |
 | Switch back to KTV | Previous song continues if `ktv.play` is re-sent | |
+| Switch from AI to KTV in a browser | `/audience` opens in a popup; if blocked, browser reports that popup permission is required | |
+| Switch from AI to KTV in Electron | A single `ourT — Audience Song Request` window opens or receives focus | |
 
 ---
 
