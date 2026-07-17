@@ -28,7 +28,13 @@
           ]
         }
       ],
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "ourT 需要使用麥克風以擷取演員語音，並即時傳送給 AI 語音服務。"
+      }
     },
     "dmg": {
       "title": "ourT",

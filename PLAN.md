@@ -292,3 +292,48 @@ process itself surfaced.
 - [todo] Apple Developer ID signing + notarization if the app needs to be
   distributed to a machine that isn't this development Mac (currently
   Gatekeeper requires a manual right-click-Open bypass)
+
+## Phase 10 — Packaged-App Microphone Access [active]
+
+User reported the mic and output audio tests not working after building —
+narrowed to the packaged `.app` specifically (dev mode via `npm start` was
+never actually affected).
+
+Root cause: electron-builder signs with `hardenedRuntime` using its default
+entitlements template (`com.apple.security.cs.allow-jit`,
+`allow-unsigned-executable-memory`, `disable-library-validation` only). Apple
+requires the additional `com.apple.security.device.audio-input` entitlement
+for `getUserMedia({ audio: true })` to work at all under hardened runtime —
+without it, macOS blocks microphone capture outright at the OS level,
+regardless of `NSMicrophoneUsageDescription` or any permission the user
+grants in the dialog. This is exactly why the same code path works fine in
+unsigned dev mode (no hardened runtime there) but silently fails once built
+and signed.
+
+- [done] Re-verified the earlier API-key exclusion fix against the actual
+  mounted `.dmg` (not just the loose `dist/mac-arm64/` folder): grepped for
+  the real key pattern and searched for any `settings.json`/`.env` — both
+  confirmed absent. The fix from Phase 9 is intact and working correctly.
+- [done] Added `ourT-electron/build/entitlements.mac.plist` with
+  `com.apple.security.device.audio-input` (plus the three pre-existing
+  Electron-required entitlements), wired via `mac.entitlements` /
+  `mac.entitlementsInherit` in `package.json`
+- [done] Added an explicit Traditional Chinese `NSMicrophoneUsageDescription`
+  via `mac.extendInfo` (previously relied on Electron's built-in English
+  default)
+- [done] Rebuilt and verified via `codesign -d --entitlements -` that the
+  new entitlement is actually embedded in the signed binary, and re-verified
+  (mounted `.dmg` scan) that no API keys leaked in this rebuild either
+- [done] Verified the rebuilt app still launches and serves `/control`
+  correctly (no regression from adding `hardenedRuntime`/entitlements)
+- [done] `tests/manual/app1-realtime.md`: added a dedicated section for
+  packaged-app microphone verification (entitlement check, real permission
+  dialog, `tccutil reset` recovery step) — the actual OS permission grant and
+  live speech capture can only be verified by a human with physical hardware
+  against a real built `.dmg`, not automated
+- [todo] Human verification with a freshly built `.dmg`: confirm the
+  permission dialog appears with the correct zh-TW text, grant it, and
+  confirm `測試麥克風` actually shows input movement
+- [todo] If `測試輸出` (speaker test, which needs no entitlement at all) is
+  still separately broken after this fix, that has a different root cause —
+  report the exact error/status text so it can be diagnosed further

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Electron/Node runtime requirements (electron-builder's own default
+         entitlements — see https://github.com/electron/electron-notarize#prerequisites
+         and https://github.com/electron-userland/electron-builder/issues/3940). -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Required for navigator.mediaDevices.getUserMedia({ audio: true }) to
+         work at all under hardened runtime. Without this, macOS blocks
+         microphone capture outright regardless of NSMicrophoneUsageDescription
+         or any user permission grant — this is what silently broke the mic
+         test in the signed/packaged build while working fine in unsigned dev
+         mode (`npm start`), since dev mode isn't hardened-runtime signed. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+  </dict>
+</plist>

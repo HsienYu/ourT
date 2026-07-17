@@ -315,7 +315,22 @@ in the filter). A built `.app`/`.dmg` therefore never bundles your local keys �
 each install starts clean and populates its own `~/Library/Application
 Support/ourt/settings.json` on first launch. If you ever see `settings.json`
 inside a built app's `Contents/Resources/server/`, that filter has regressed —
-delete `dist/` and fix `extraResources` before distributing anything.
+delete `dist/` and fix `extraResources` before distributing anything. Verify
+with: `hdiutil attach dist/*.dmg -nobrowse -quiet -mountpoint /tmp/ourt-check && find /tmp/ourt-check -name settings.json && hdiutil detach /tmp/ourt-check`.
+
+### Microphone access in the packaged app
+
+The build is signed with `hardenedRuntime: true`, which requires the
+`com.apple.security.device.audio-input` entitlement (in
+`ourT-electron/build/entitlements.mac.plist`) for
+`navigator.mediaDevices.getUserMedia({ audio: true })` to work at all —
+without it, macOS silently blocks microphone capture regardless of the
+`NSMicrophoneUsageDescription` prompt or any permission the user grants. This
+only affects the signed `.app`/`.dmg`; unsigned dev mode (`npm start`) was
+never affected. If mic access still doesn't work after installing a fresh
+build: check System Settings → Privacy & Security → Microphone for ourT, or
+reset the decision with `tccutil reset Microphone com.ourt.performance` and
+relaunch.
 
 ---
 
@@ -347,6 +362,7 @@ delete `dist/` and fix `extraResources` before distributing anything.
 | Projection fullscreen toggle only hides the menu bar, doesn't resize | Fixed — uses platform-native `setFullScreen()`, not kiosk mode (kiosk had known Electron/macOS reliability bugs) | Update to latest; if still stuck, check the Electron main-process console for `[main] projection fullscreen →` log lines |
 | Saving an AI character preset silently does nothing in the packaged app | Fixed — Electron does not implement `window.prompt()` at all; preset naming now uses an in-page modal | Update to latest; verify in the actual `.app`, not just a browser tab, since `window.prompt()` works fine in a regular browser but throws in Electron |
 | Gemini Live disconnects every time a parameter changes | Expected, not a bug — Gemini's public Live API has no live-update mechanism at all, so any parameter change reconnects | Confirm the console shows a clean `1000` close, not `1007 Request contains an invalid argument`, which would indicate a regression |
+| 測試麥克風 / mic input doesn't work in the packaged `.app` (worked fine in `npm start`) | Fixed — hardened-runtime code signing needs the explicit `com.apple.security.device.audio-input` entitlement, or macOS blocks mic capture outright regardless of the permission dialog | Rebuild with latest; verify with `codesign -d --entitlements - ourT.app` shows `com.apple.security.device.audio-input`; if still blocked, `tccutil reset Microphone com.ourt.performance` and relaunch |
 
 ---
 

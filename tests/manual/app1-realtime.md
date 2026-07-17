@@ -150,6 +150,30 @@ browser-only test would not have caught the original bug.
 
 ---
 
+## 5a-1. Microphone Access in the Packaged/Signed Electron App
+
+The signed, hardened-runtime `.app`/`.dmg` build blocks microphone access at
+the macOS level unless the `com.apple.security.device.audio-input`
+entitlement is present — this is separate from, and in addition to, the
+in-app `NSMicrophoneUsageDescription` permission prompt. This was root-caused
+and fixed in `ourT-electron/build/entitlements.mac.plist` /
+`package.json`'s `mac.entitlements`, but the actual OS permission grant and
+real speech capture can only be verified by a human with physical hardware —
+run this section specifically against a freshly built `.dmg`, not `npm start`
+dev mode (dev mode is unsigned and was never actually affected by this bug).
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Verify the entitlement is embedded: `codesign -d --entitlements - ourT.app` | Output includes `com.apple.security.device.audio-input` = true | |
+| Install/open a freshly built `.dmg` for the first time on this Mac | macOS shows the microphone permission dialog with the Traditional Chinese description `ourT 需要使用麥克風以擷取演員語音，並即時傳送給 AI 語音服務。` | |
+| Click 允許 (Allow) | Dialog dismisses; System Settings → Privacy & Security → Microphone shows ourT as granted | |
+| Tap `測試麥克風` in `/control` → `系統設定` | INPUT graph actually moves while speaking (not stuck flat/empty) | |
+| Tap `測試輸出` | Two 880 Hz tones audible — this does NOT require any entitlement, so if it was also failing before, confirm it's independently fixed/working now, or report the exact error if not | |
+| Start a real session and speak | Transcript appears on `/monitor` and `/projection` within ~2s | |
+| If macOS still silently denies mic access | Reset the permission decision: `tccutil reset Microphone com.ourt.performance`, then relaunch and grant again | |
+
+---
+
 ## 5b. Transcript Roles, Locale, and Projection
 
 | Check | Expected | Evidence |
