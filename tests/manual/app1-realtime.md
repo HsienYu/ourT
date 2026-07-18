@@ -138,6 +138,109 @@ browser-only test would not have caught the original bug.
 
 ---
 
+## 5e. Text-Model Dropdowns and Song-Analysis Prompt Override
+
+New model pickers for the text-generation providers (distinct from the
+Realtime/Live voice models above), plus an operator-configurable override for
+the KTV song-analysis system prompt.
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Open `系統設定`, look at `Claude 文字模型` / `Groq 文字模型` / `Mistral 文字模型` / `OpenAI 文字模型` | Each is populated (static lists), no duplicate entries in any dropdown | |
+| Change one, save, reload `/control` | The saved value persists | |
+| Leave `歌曲分析自訂提示` empty, trigger 他點這首歌有什麼樣的傾向？ from `/audience` | Analysis uses the original built-in prompt (still coherent, ~100 字以內) | |
+| Enter a custom prompt in `歌曲分析自訂提示`, save, trigger analysis again | Analysis visibly reflects the custom prompt's instructions | |
+| Clear the custom prompt, save | Analysis reverts to the built-in default | |
+
+---
+
+## 5f. RAG Context (Taiwan LGBT Movement History)
+
+`server/rag/taiwan-lgbt-history.md` is now included in the Realtime AI
+conversation's instructions (previously RAG only reached lyrics
+rewrite/song analysis) — verify it's actually reachable and used
+appropriately, not just present in the file.
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Start a session, ask about 台灣同志運動歷史 or 常德街事件/Corners 酒吧/AG 健身中心 | AI references the real events with roughly correct facts, not fabricated details | |
+| Ask a completely unrelated question (e.g. 今天天氣如何) | AI does NOT unprompted recite the historical content — it stays contextually silent about it | |
+| Ask about a historical detail NOT in the file (e.g. names of specific people involved) | AI does not fabricate specifics; acknowledges uncertainty | |
+| Confirm the tone | AI treats the 1992 T Bar 偷拍/自殺 event with appropriate gravity, not casually | |
+
+---
+
+## 5g. Short-Term Memory Across Reconnects
+
+Bounded (~4 exchanges) conversation memory, sent with every `session.start`
+so a reconnect (Gemini parameter change, OpenAI voice change, or KTV
+pause/resume — see 5h below) doesn't start the conversation cold.
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Have a short exchange (2-3 turns), then change an attitude/slider with Gemini active | Session reconnects (expected); once reconnected, ask "剛才我們在聊什麼？" | AI can reference the recent exchange, not just the system prompt | |
+| Same test with OpenAI, but change voice (which also reconnects) | Same result — recent exchange is remembered after the voice-change reconnect | |
+| With OpenAI, change a parameter that does NOT reconnect (e.g. attitude) | Conversation continues normally (no seeding needed — same live connection) | |
+| Tap 結束 (`endSessionManually`), then 開始 / 連線 again | AI does NOT remember the prior conversation — memory is intentionally cleared on an explicit operator stop | |
+| Have a long exchange (10+ turns), then trigger a reconnect | Only the most recent ~4 exchanges are seeded, not the entire conversation (bounded, "short" memory by design) | |
+
+---
+
+## 5h. KTV / AI Mutual Exclusion
+
+While a song plays, the AI conversation should be silent — verify this is
+now automatic in both directions.
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Start an AI session, then play a KTV song (播放 / 播放此歌 from `/control`) | AI session automatically closes (mic, output audio, and the Realtime connection all stop) — Control log shows `KTV 開始播放，AI 對話暫停` | |
+| Let the song play to the end | AI session automatically reconnects — Control log shows `KTV 播放結束，AI 對話自動重新連線` | |
+| While a song is playing, tap 切歌 to skip directly to another queued song | AI does NOT reconnect between the two songs — it was already disconnected and stays disconnected through the skip | |
+| Skip to an empty queue (切歌 with nothing queued next) | AI reconnects once, exactly as if the first song had ended naturally | |
+| Manually tap 結束 (`endSessionManually`) with no KTV involved, then play a song later | No spurious auto-reconnect happens when the song ends — the pause-tracking flag is only set by KTV-triggered disconnects, not manual ones | |
+
+---
+
+## 5i. Voice-Triggered Response Length (`set_response_length`)
+
+Generalizes the `精簡資訊回覆` checkbox into something the performer can also
+trigger by voice — requires `AI 對話功能開關 → 語音調整回應長度` enabled and a
+session restart after enabling it (tool declarations are connect-time-only).
+
+| Check | Expected | Evidence |
+|---|---|---|
+| Enable the toggle, save, restart the session | No visible error; session connects normally | |
+| Mid-conversation, say something like "可以簡短一點嗎" / "不要講太久" | AI's next replies become noticeably shorter (1-3 sentences), without you touching the `精簡資訊回覆` checkbox | |
+| Watch the checkbox during this | It updates to checked automatically, and the Control log shows `AI 語音要求調整回應長度：concise` | |
+| On OpenAI | The change applies without any visible reconnect | |
+| On Gemini | One reconnect occurs, then the shorter behavior takes effect | |
+| Say "可以多說一點嗎" / "詳細一點" | AI gives longer, more detailed responses (`expanded`); checkbox unchecks (checkbox only represents concise vs not) | |
+| Say something like "恢復正常" / "普通就好" | Behavior returns to normal-length responses (`normal`) | |
+| Trigger the change repeatedly (concise → expanded → concise) in one session | Instructions do not visibly accumulate duplicated/conflicting rules — only the latest requested length applies | |
+| Disable the toggle, restart the session, try the same voice request | AI does not call the tool at all (no tool was declared this session) | |
+
+---
+
+## 5j. Voice-Triggered Song Search + Import
+
+Requires `AI 對話功能開關 → 語音搜尋並下載歌曲` enabled (default OFF) and a
+session restart after enabling it. This starts real `yt-dlp`/Whisper work —
+run it against real network access.
+
+| Check | Expected | Evidence |
+|---|---|---|
+| With the toggle OFF, ask the AI to find a song | AI does not attempt to search (tool not available this session) | |
+| Enable the toggle, restart the session, ask "幫我找一首周杰倫的稻香" | Within a few seconds, AI reads back 1-2 candidate results (title/channel) | |
+| Say something ambiguous instead of confirming (e.g. change topic) | AI does NOT start downloading without a clear confirmation | |
+| Confirm a specific result (e.g. "對，就是這個" / "第一個") | AI acknowledges it started downloading (~1 minute), conversation continues normally in the meantime | |
+| Wait ~30-90s | AI naturally mentions the download finished, without you asking again — confirms the completion announcement arrived | |
+| Check `/control`'s 控制台選歌 or `/audience` | The new song appears in the catalog | |
+| Confirm it was NOT auto-queued | It does not appear in the KTV queue until an operator manually adds it | |
+| Repeat a full voice-triggered import 5 times in one server run, then request a 6th | The 6th request is refused (AI relays that the limit was reached); `/control`'s manual search+import is unaffected by this cap | |
+| Restart the server, try again | The cap resets — the count is per server run/performance, not persisted forever | |
+
+---
+
 ## 5a. Provider Settings
 
 | Check | Expected | Evidence |

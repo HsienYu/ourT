@@ -91,8 +91,56 @@ Either provider is selectable in `/control` → `系統設定` → `Realtime 語
 6. Adjust attitude/state/sliders/prompt override → pushed live automatically (debounced ~400ms), no button needed. Behavior differs by provider: OpenAI updates in place; **Gemini Live has no live-update mechanism at all and always reconnects** to apply any change (its `setup` message — voice, model, instructions — is one-time only). Voice changes always reconnect on both providers.
 7. **打斷 AI** interrupts current AI response instantly (also triggers automatically when the performer talks over the AI — barge-in)
 8. **清除投影文字** wipes the projection screen
-9. **精簡資訊回覆**: toggle it on for labels, summaries, and observations that should answer directly in 1–3 short sentences without questions or topic extension; OpenAI applies it live, while Gemini reconnects.
+9. **精簡資訊回覆**: toggle it on for labels, summaries, and observations that should answer directly in 1–3 short sentences without questions or topic extension; OpenAI applies it live, while Gemini reconnects. The performer can also trigger this by voice (see below).
 10. **AI 角色預設**: save the current voice/attitude/state/sliders/prompt and concise-information mode as a named, numbered preset for instant recall during the show; expandable list, not capped at 4
+
+### KTV automatically pauses the AI conversation
+
+Starting a KTV song automatically closes the AI Realtime session (mic,
+output audio, and the connection all stop) — the Control log shows `KTV 開始
+播放，AI 對話暫停`. When the song ends, the AI session automatically
+reconnects (`KTV 播放結束，AI 對話自動重新連線`). Skipping directly from one
+song to another does not reconnect in between — the AI stays disconnected the
+whole time KTV is active. An explicit 結束 (not KTV-triggered) also clears
+short-term memory (see below); a KTV-triggered pause does not, so the
+conversation continues naturally once the song ends.
+
+### Short-term memory
+
+The AI remembers roughly the last 4 exchanges — bounded on purpose, not the
+whole conversation. This is what's carried across a reconnect (a Gemini
+parameter change, an OpenAI voice change, or a KTV pause/resume above) so the
+AI doesn't feel like it forgot everything mid-show. Tapping 結束 clears it
+intentionally; the next 開始/連線 starts fresh.
+
+### AI 對話功能開關 (voice-triggered capabilities)
+
+Two opt-in capabilities, toggled in `/control` → **AI 對話功能開關** (a
+separate settings block from `系統設定`). Both require ending and restarting
+the session to apply — tool declarations are connect-time-only on both
+providers, the same constraint as a voice change.
+
+- **語音調整回應長度** (default on): the performer can say things like `簡短
+  一點` or `多說一點` mid-conversation, and the AI adjusts its own response
+  length going forward — the same underlying setting as the `精簡資訊回覆`
+  checkbox, just voice-triggered instead of operator-triggered. Applies
+  live on OpenAI; causes one reconnect on Gemini.
+- **語音搜尋並下載歌曲** (default **off** — opt-in, resource/cost risk): lets
+  the performer ask the AI to find a KTV song before switching into karaoke.
+  The AI searches YouTube, reads back 1-2 candidates, waits for a spoken
+  confirmation, then starts the real download (30-90s) in the background and
+  announces completion once done. Only adds the song to the catalog — never
+  auto-queues it, so the operator still reviews it before it's played. Capped
+  at 5 voice-triggered imports per server run (the operator-driven `/control`
+  search+import UI has no such cap).
+
+### RAG: background reference material
+
+`server/rag/*.md` (演出概念 + 台灣同志運動歷史事件，見
+`server/rag/taiwan-lgbt-history.md`) is available to the live AI conversation
+(as well as lyrics rewrite and song analysis, which already used it) — the AI
+references it only when a conversation naturally touches on those topics, not
+by reciting it unprompted.
 
 ### Voice options
 
@@ -238,7 +286,7 @@ Claude reads them before every rewrite to align the lyrics with the show's artis
 5. Tap **切歌** to stop the current song and immediately start the next request; it stops playback when the queue is empty
 6. Toggle **歌詞模式：整行 / 掃光** for line-highlight vs karaoke wipe
 7. **Lyrics Editor** section: select variant, generate with LLM, or edit LRC directly and push to projection
-8. Tap **他點這首歌有什麼樣的傾向？** (operator or audience) for Claude analysis overlay
+8. Tap **他點這首歌有什麼樣的傾向？** (operator or audience) for Claude analysis overlay — the prompt used can be customized via `系統設定` → `歌曲分析自訂提示`, leave empty for the built-in default
 
 The Control badge reports Projection connection status. Playback may start
 before Projection connects; when Projection connects or reconnects, the server

@@ -525,3 +525,154 @@ analysis.
 - [todo] Manual OpenAI/Gemini rehearsal verification: toggle mode during an
   active session, request a label/summary/observation, confirm concise direct
   output, then disable it and confirm normal dialogue resumes
+
+## Phase 18 — AI Settings Completeness, KTV/AI Exclusivity, Memory, Voice Tools [active]
+
+User requested a broad set of AI dialogue improvements in one pass: (A) make
+sure every AI-related setting is actually configurable in Control's 系統設定,
+(B) automatically stop the AI conversation while KTV plays and resume it
+after, (C) short-term conversational memory so parameter changes/reconnects
+don't feel like total amnesia, (D) let the performer adjust the AI's response
+length by voice instead of only via a Control checkbox, (E) give the AI
+Realtime conversation access to a specific real historical dataset (Taiwan
+LGBT movement events) it previously couldn't see at all, (F) let the
+performer voice-request a KTV song search+download before switching into
+karaoke, and (G) settings toggles for the two riskiest new capabilities. Full
+TDD for every piece of pure, extractable logic (`server/lib/realtime-session.js`,
+`server/lib/voice-import-guard.js`); WebSocket/DOM orchestration
+(`realtime-proxy.js`, `control/index.html`) follows this codebase's existing,
+deliberate boundary and is manual-protocol verified instead
+(`tests/manual/app1-realtime.md` sections 5e-5j, `app3-ktv.md` section 9).
+
+### A — AI settings completeness
+- [done] Added `Claude`/`Groq`/`Mistral`/`OpenAI 文字模型` dropdowns to
+  `系統設定` (server already supported all four via `getModelsForProvider`;
+  only the UI wiring was missing) — de-duplicated the `openaiText` static
+  list against its own default value
+- [done] Added a `歌曲分析自訂提示` override (`ktv.songAnalysisPrompt` in
+  settings.js), mirroring the existing lyrics-rewrite custom-prompt pattern
+- [done] Removed the dead `yolo.model` default (never read anywhere — the
+  real YOLO pipeline uses `app2-yolo/config.yaml` instead); noted that
+  existing `settings.json` files may still carry a stale copy of this key
+  via `deepMerge`, which is harmless (unused) rather than actively purged
+- [todo] Manual verification: each new dropdown persists and is actually used
+  by a live provider call; the song-analysis prompt override changes output
+
+### B — KTV / AI Realtime mutual exclusion
+- [done] `didKtvStart`/`didKtvEnd` pure decision functions
+  (`realtime-session.js`) — deliberately do NOT fire on a skip directly from
+  one song to another (AI is already disconnected, stays disconnected)
+- [done] Control's `queue.updated` handler calls `closeSession()` when a song
+  starts (only if a session was active) and `startSession()` again when it
+  ends (only if that pause was KTV-caused, tracked via a `pausedForKtv` flag)
+- [done] `結束` now calls `endSessionManually()` — an explicit operator stop
+  distinct from the KTV-triggered pause; only this clears short-term memory
+- [todo] Manual verification: start→play→auto-pause→song ends→auto-resume;
+  confirm a skip between two songs does not spuriously reconnect
+
+### C — Short-term rolling memory across reconnects
+- [done] Every reconnect (Gemini parameter change, OpenAI voice change, KTV
+  pause/resume) opens a brand-new browser→server WebSocket, so the buffer
+  lives in Control's `state.recentTranscript` (survives those cycles),
+  capped to the last 8 turns (~4 exchanges) — deliberately bounded, not a
+  full transcript
+- [done] `appendTranscriptTurn`, `buildGeminiSeedTurns` (raw `clientContent`
+  seeding — confirmed via Gemini's own docs as the supported mechanism, unlike
+  the `role:"system"` live-update that's confirmed broken), and
+  `buildOpenAISeedItems` (`conversation.item.create`, correct
+  `input_text`/`output_text` content type per role) in `realtime-session.js`
+- [done] Seeding wired into `connectToOpenAI()`'s `ws.on('open')` (fires
+  exactly once per real OpenAI connection — NOT the `session.updated` ack,
+  which also fires on every later live update) and Gemini's `setupComplete`
+  handler
+- [done] Control accumulates `transcript.user.delta/.done` (previously
+  unhandled entirely) and `transcript.ai.delta/.done` into the buffer;
+  cleared only by `endSessionManually()`
+- [todo] Manual verification: a reconnect (either provider) doesn't start the
+  conversation cold; an explicit 結束 does clear memory; only ~4 exchanges
+  are retained even after a much longer conversation
+
+### D — Voice-triggered response length (tool/function calling)
+- [done] Generalized the `精簡資訊回覆` boolean into a shared tri-state
+  `responseLength` ('concise'|'normal'|'expanded') — the manual checkbox
+  still only reaches concise/normal (unchanged UI meaning); `expanded` is
+  reachable only via voice; character presets still persist the original
+  boolean field (`conciseInformationMode`) for backward compatibility
+- [done] `set_response_length` tool declared via `buildResponseLengthTool`
+  (OpenAI) / `buildResponseLengthFunctionDeclaration` (Gemini) — confirmed
+  current wire schemas via Context7 (OpenAI `session.tools` array with
+  `type:"function"`; Gemini bare `functionDeclarations` inside
+  `tools:[{functionDeclarations}]`)
+- [done] Applied live on OpenAI (`conversation.item.create` function output +
+  `buildOpenAIInstructionsUpdate`, no reconnect); applied via a
+  server-initiated reconnect on Gemini (tool-response channel is moot since
+  the connection is closing anyway) — idempotent via a marker that strips any
+  prior voice-triggered fragment before appending the new one, so repeated
+  voice requests in one session don't accumulate conflicting instructions
+- [done] Broadcasts `ai.responseLength`; Control updates its own state/checkbox
+  so a later operator-driven instruction rebuild doesn't silently overwrite
+  what the voice command just set
+- [todo] Manual verification (both providers): voice-triggered shorter/longer
+  requests actually change behavior; OpenAI applies without a visible
+  reconnect, Gemini reconnects once; repeated requests don't duplicate rules
+
+### E — RAG: Taiwan LGBT movement history
+- [done] Added `server/rag/taiwan-lgbt-history.md` (1990 我們之間成立, 1992
+  台視新聞世界報導/T Bar 偷拍事件, 1997 常德街事件, 1998 AG 健身中心事件, 1999
+  Corners 酒吧臨檢事件, 2000 北投 24 會館三溫暖事件) with an explicit framing
+  note asking the AI to treat this with gravity and not fabricate details
+  beyond what's recorded — same shared `server/rag/` folder already used by
+  lyrics rewrite/song analysis (confirmed by user's choice: affects all three)
+- [done] New `GET /api/rag/context` — the Realtime AI conversation
+  previously had zero access to `server/rag/*.md` at all (only lyrics
+  rewrite/song analysis did); Control fetches this once at startup and
+  appends it into `buildInstructions()` behind a "reference only when
+  relevant, don't recite unprompted" framing line
+- [done] Verified combined RAG size (~2.6KB) stays well under the existing
+  4000-char cap in `loadRagContext()`
+- [todo] Manual verification: AI accurately references these events when
+  asked, stays silent about them when irrelevant, and doesn't fabricate
+  unrecorded specifics
+
+### F — Voice-triggered song search + import
+- [done] Two tools: `search_song` (fast/synchronous, returns candidates for
+  the model to read back for confirmation) and `import_requested_song`
+  (starts the existing 30-90s async download+transcribe pipeline; tool
+  description explicitly instructs the model to confirm with the performer
+  first) — declared via `buildSearchSongTool`/`buildImportSongTool`
+  (OpenAI) and their `*FunctionDeclaration` Gemini equivalents
+- [done] `server/lib/voice-import-guard.js` — module-level cap (default 5)
+  on voice-triggered imports per server run, separate from the uncapped
+  operator-driven `/control` search+import UI
+- [done] Reuses the existing `songImporter.importSong()`/catalog pipeline;
+  per user's decision, only adds to the catalog — never auto-enqueues into
+  the KTV queue, preserving operator review
+- [done] Completion (or failure) announced back into the live conversation
+  via the same `clientContent`/`conversation.item.create` channel built for
+  short-term memory seeding (C) — reuses `buildGeminiSeedTurns` directly for
+  the Gemini announcement
+- [todo] Manual verification against real `yt-dlp`/Whisper: search→confirm→
+  download→spoken completion announcement→catalog (not queue) update; the
+  6th voice-triggered import in one run is correctly refused
+
+### G — Settings toggles for the two riskiest capabilities
+- [done] Per user's choice, only `voiceLengthControl` (default **on**) and
+  `voiceSongImport` (default **off** — opt-in given real cost/time/risk) are
+  exposed as toggles; KTV auto-disconnect/reconnect and short-term memory
+  stay always-on with no settings UI
+- [done] New standalone Control settings block "AI 對話功能開關", separate
+  from the main `系統設定` grid, with its own save button and an explicit
+  "requires session restart to apply" hint (tool declarations are
+  connect-time-only on both providers, same constraint as a voice change)
+- [todo] Manual verification: each toggle actually adds/removes its tool from
+  a live connect payload; the "needs restart" hint is accurate
+
+### Tests (all in this phase, all passing)
+- [done] `realtime-session.test.js` extended: 44 new assertions across
+  short-term memory, KTV/AI exclusion decisions, and both new tool families
+- [done] New `voice-import-guard.test.js` (4 tests)
+- [done] Full suite: 99 unit tests passing, 0 failing
+- [done] Live smoke test: fresh server boot, `/api/rag/context`,
+  `/api/settings` (`aiFeatures` present, correct defaults), and
+  `/api/settings/models?provider=openaiText|claude` all verified manually
+  against a running instance before commit

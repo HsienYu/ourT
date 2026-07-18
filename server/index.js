@@ -217,6 +217,14 @@ function loadRagContext() {
   }
 }
 
+// Exposes the same RAG context already used by lyrics rewrite/song analysis
+// to the AI Realtime dialogue (server/public/control/index.html's
+// buildInstructions() — a client-side function with no other way to reach
+// server/rag/*.md).
+app.get('/api/rag/context', (req, res) => {
+  res.type('text/plain').send(loadRagContext());
+});
+
 // ── Shared LLM lyrics generation (uses ai-providers abstraction) ──────────────
 const VARIANT_PROMPTS = {
   'gender-swap': `你是一位繁體中文歌詞改編者。根據演出概念背景，將歌詞中的性別詞語進行流動性互換（他↔她↔TA、男↔女、哥↔姐等）。保持 LRC 時間戳記格式和音節數不變（±2字）。只輸出 LRC 內容，不要任何說明。`,
@@ -282,11 +290,15 @@ app.post('/api/ktv/analyze', async (req, res) => {
   if (!item || !item.song) return res.status(400).json({ error: 'missing item' });
 
   const { title, artist } = item.song;
-  const prompt =
+  const defaultPrompt =
     `一位觀眾在劇場表演現場點了《${title}》（${artist}）。\n` +
     `請根據這首歌的情感色彩、歌詞主題（若你知道的話）、以及這首歌在台灣流行文化中的意涵，` +
     `分析這位觀眾可能的心理狀態、情感傾向、或性別文化認同線索。\n` +
     `回答用繁體中文，100 字以內，語氣像在旁白，不要條列式。`;
+  // Operator-configured override (server/lib/settings.js: ktv.songAnalysisPrompt),
+  // set via /control's 系統設定. Falls back to the default prompt when empty.
+  const customPrompt = settingsLib.getSettings(false).ktv.songAnalysisPrompt;
+  const prompt = customPrompt ? `${customPrompt}\n\n歌曲：《${title}》（${artist}）` : defaultPrompt;
 
   try {
     const { text } = await aiProviders.generateText({

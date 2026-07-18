@@ -171,6 +171,7 @@ re-importing the song.
 | Switch back to KTV | Previous song continues if `ktv.play` is re-sent | |
 | Switch from AI to KTV in a browser | `/audience` opens in a popup; if blocked, browser reports that popup permission is required | |
 | Switch from AI to KTV in Electron | A single `ourT — Audience Song Request` window opens or receives focus | |
+| Play a song while an AI session is active (not just switching the mode button) | AI session automatically closes; automatically reconnects when the song ends — see `tests/manual/app1-realtime.md` section 5h for the full protocol | |
 
 ---
 

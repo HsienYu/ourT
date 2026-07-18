@@ -27,7 +27,19 @@ npm test
   reconnects on a voice change, Gemini reconnects on ANY parameter change
   (its public Live API has no live-update mechanism at all; see the
   correction note at the top of `realtime-session.js`) — and asserts the
-  zh-TW (臺灣繁體中文) default instructions are always present on both.
+  zh-TW (臺灣繁體中文) default instructions are always present on both. Also
+  covers: short-term rolling memory (`appendTranscriptTurn`,
+  `buildGeminiSeedTurns`, `buildOpenAISeedItems` — bounded history seeded into
+  a fresh connection so a reconnect doesn't start the conversation cold);
+  KTV/AI mutual-exclusion decisions (`didKtvStart`/`didKtvEnd` — deliberately
+  do NOT fire on a skip directly from one song to another); and the
+  voice-triggered tool declarations/instruction text for response-length
+  control and song search/import (`responseLengthInstruction`,
+  `buildResponseLengthTool`/`buildResponseLengthFunctionDeclaration`,
+  `buildSearchSongTool`/`buildSearchSongFunctionDeclaration`,
+  `buildImportSongTool`/`buildImportSongFunctionDeclaration`), including that
+  `buildOpenAIConnectSession`/`buildGeminiSetup` omit `tools` entirely when
+  none are enabled (backward compatible with sessions using no tools).
 - `settings-presets.test.js` — covers the character-preset CRUD logic in
   `server/lib/settings.js` (`getPresets`/`savePreset`/`deletePreset`), using an
   isolated temp settings file per test via `OURT_SETTINGS_PATH` so it never
@@ -59,6 +71,10 @@ npm test
 - `song-storage.test.js` — covers first-launch seeding of packaged songs into
   the writable runtime songs directory and preservation of imported media on
   later launches.
+- `voice-import-guard.test.js` — covers `server/lib/voice-import-guard.js`:
+  the per-server-run cap on voice-triggered song imports (default 5), so a
+  repeated voice request can't spend unlimited yt-dlp/Whisper time during a
+  live show. Module-level counter, reset via `resetGuard()` between tests.
 
 ## What's intentionally NOT covered here
 

@@ -10,7 +10,59 @@ const {
   buildOpenAIConnectSession,
   buildOpenAIInstructionsUpdate,
   buildGeminiSetup,
+  buildGeminiSeedTurns,
+  buildOpenAISeedItems,
+  RESPONSE_LENGTH_TOOL_NAME,
+  RESPONSE_LENGTH_LEVELS,
+  responseLengthInstruction,
+  buildResponseLengthTool,
+  buildResponseLengthFunctionDeclaration,
+  SEARCH_SONG_TOOL_NAME,
+  IMPORT_SONG_TOOL_NAME,
+  buildSearchSongTool,
+  buildSearchSongFunctionDeclaration,
+  buildImportSongTool,
+  buildImportSongFunctionDeclaration,
 } = require('./realtime-session');
+const youtubeSearch = require('./youtube-search');
+const songImporter = require('./song-importer');
+const voiceImportGuard = require('./voice-import-guard');
+
+// Marker delimiting a voice-triggered response-length fragment appended to
+// sessionConfig.instructions, so a second tool call in the same session
+// replaces the previous fragment instead of accumulating duplicates.
+const RESPONSE_LENGTH_MARKER = '\n\n【語音回應長度指示】\n';
+
+function stripPriorResponseLengthFragment(instructions) {
+  const idx = (instructions || '').indexOf(RESPONSE_LENGTH_MARKER);
+  return idx === -1 ? (instructions || '') : instructions.slice(0, idx);
+}
+
+function applyResponseLengthToInstructions(instructions, level) {
+  const base = stripPriorResponseLengthFragment(instructions);
+  const fragment = responseLengthInstruction(level);
+  return fragment ? `${base}${RESPONSE_LENGTH_MARKER}${fragment}` : base;
+}
+
+/**
+ * Map Control's enabledTools name list (server/public/control/index.html's
+ * buildEnabledToolNames(), driven by settings.aiFeatures) to the actual
+ * provider-shaped tool declarations. Each entry here is one voice-triggered
+ * capability; unrecognized names are silently ignored (fail safe: no tool).
+ */
+function buildOpenAITools(enabledToolNames) {
+  const tools = [];
+  if (enabledToolNames?.includes('responseLength')) tools.push(buildResponseLengthTool());
+  if (enabledToolNames?.includes('songImport')) tools.push(buildSearchSongTool(), buildImportSongTool());
+  return tools;
+}
+
+function buildGeminiTools(enabledToolNames) {
+  const tools = [];
+  if (enabledToolNames?.includes('responseLength')) tools.push(buildResponseLengthFunctionDeclaration());
+  if (enabledToolNames?.includes('songImport')) tools.push(buildSearchSongFunctionDeclaration(), buildImportSongFunctionDeclaration());
+  return tools;
+}
 
 const GEMINI_LIVE_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 const toTaiwanTraditional = OpenCC.Converter({ from: 'cn', to: 'twp' });
@@ -96,10 +148,107 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
     } else if (message.type === 'error') {
       console.error('[realtime-proxy] OpenAI error detail:', JSON.stringify(message.error));
       broadcast.toAll({ type: 'ai.error', message: message.error?.message || 'unknown error' });
+    } else if (message.type === 'response.function_call_arguments.done') {
+      handleOpenAIToolCall(message);
     }
   }
 
+  function sendOpenAIToolOutput(callId, outputPayload) {
+    providerWs.send(JSON.stringify({
+      type: 'conversation.item.create',
+      item: { type: 'function_call_output', call_id: callId, output: JSON.stringify(outputPayload) },
+    }));
+    providerWs.send(JSON.stringify({ type: 'response.create' }));
+  }
+
+  /**
+   * Dispatch a completed OpenAI function call to the matching handler.
+   * Unrecognized tool names are silently ignored (no response is sent) — this
+   * should not happen in practice since only enabled tools are ever declared
+   * to the model in the first place (see buildOpenAITools above).
+   */
+  function handleOpenAIToolCall(message) {
+    if (message.name === RESPONSE_LENGTH_TOOL_NAME) {
+      handleResponseLengthCall(message);
+    } else if (message.name === SEARCH_SONG_TOOL_NAME) {
+      handleSearchSongCall(message);
+    } else if (message.name === IMPORT_SONG_TOOL_NAME) {
+      handleImportSongCall(message);
+    }
+  }
+
+  function handleResponseLengthCall(message) {
+    let level = 'normal';
+    try {
+      level = JSON.parse(message.arguments || '{}').length || 'normal';
+    } catch {
+      // malformed arguments — fail safe to 'normal'
+    }
+    if (!RESPONSE_LENGTH_LEVELS.includes(level)) level = 'normal';
+
+    // OpenAI applies this live — no reconnect needed, so the tool response
+    // and the instructions update can both go out immediately.
+    sessionConfig = { ...sessionConfig, instructions: applyResponseLengthToInstructions(sessionConfig.instructions, level) };
+    sendOpenAIToolOutput(message.call_id, { ok: true, length: level });
+    providerWs.send(JSON.stringify(buildOpenAIInstructionsUpdate({ instructions: sessionConfig.instructions })));
+    broadcast.toAll({ type: 'ai.responseLength', level });
+  }
+
+  /** Fast (~1-3s), synchronous from the model's perspective — safe to await. */
+  async function handleSearchSongCall(message) {
+    let query = '';
+    try {
+      query = (JSON.parse(message.arguments || '{}').query || '').trim();
+    } catch {
+      // malformed arguments — treated as empty query below
+    }
+    if (!query) {
+      sendOpenAIToolOutput(message.call_id, { ok: false, error: '缺少搜尋關鍵字' });
+      return;
+    }
+    try {
+      const results = await youtubeSearch.searchYoutube(query, 5);
+      sendOpenAIToolOutput(message.call_id, {
+        ok: true,
+        results: results.map((r) => ({ videoId: r.videoId, title: r.title, channel: r.channel, durationSeconds: r.durationSeconds })),
+      });
+    } catch (err) {
+      sendOpenAIToolOutput(message.call_id, { ok: false, error: err.message });
+    }
+  }
+
+  /**
+   * Starts the real 30-90s download in the background — the tool response is
+   * an immediate ack, not the completion. announceImportCompletion() injects
+   * a follow-up context note once the download actually finishes (or fails).
+   */
+  function handleImportSongCall(message) {
+    let args = {};
+    try {
+      args = JSON.parse(message.arguments || '{}');
+    } catch {
+      // malformed arguments — treated as missing fields below
+    }
+    const { videoId, title, artist } = args;
+    if (!videoId || !title) {
+      sendOpenAIToolOutput(message.call_id, { ok: false, error: '缺少 videoId 或 title' });
+      return;
+    }
+    if (!voiceImportGuard.canImport()) {
+      sendOpenAIToolOutput(message.call_id, { ok: false, error: '本場演出的語音下載次數已達上限，請改用 /control 手動匯入' });
+      return;
+    }
+    voiceImportGuard.recordImport();
+    sendOpenAIToolOutput(message.call_id, { ok: true, message: '已開始下載，大約需要一分鐘，完成後會加入歌曲目錄' });
+    runVoiceTriggeredImport(videoId, title, artist);
+  }
+
   function handleGeminiEvent(message) {
+    if (message.toolCall) {
+      handleGeminiToolCall(message.toolCall);
+      return;
+    }
+
     const content = message.serverContent;
     if (!content) {
       if (message.error) {
@@ -135,6 +284,125 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
     }
   }
 
+  function sendGeminiToolResponse(id, name, result) {
+    providerWs.send(JSON.stringify({
+      toolResponse: { functionResponses: [{ id, name, response: { result } }] },
+    }));
+  }
+
+  /**
+   * Dispatch every function call in a Gemini toolCall message. Handles
+   * multiple simultaneous calls (functionCalls is an array) even though in
+   * practice the model calls one at a time here.
+   */
+  function handleGeminiToolCall(toolCall) {
+    for (const call of toolCall.functionCalls || []) {
+      if (call.name === RESPONSE_LENGTH_TOOL_NAME) {
+        handleGeminiResponseLengthCall(call);
+      } else if (call.name === SEARCH_SONG_TOOL_NAME) {
+        handleGeminiSearchSongCall(call);
+      } else if (call.name === IMPORT_SONG_TOOL_NAME) {
+        handleGeminiImportSongCall(call);
+      }
+    }
+  }
+
+  /**
+   * Unlike OpenAI, Gemini's public Live API has no live-update mechanism at
+   * all (see needsReconnect() in realtime-session.js) — applying a response-
+   * length change requires a full reconnect. The pending tool-response
+   * channel is therefore moot here: this connection is about to close, so
+   * the model will simply behave per the new instructions once it
+   * reconnects, the same way any other Gemini parameter change works.
+   */
+  function handleGeminiResponseLengthCall(call) {
+    let level = call.args?.length || 'normal';
+    if (!RESPONSE_LENGTH_LEVELS.includes(level)) level = 'normal';
+
+    sessionConfig = {
+      ...sessionConfig,
+      instructions: applyResponseLengthToInstructions(sessionConfig.instructions, level),
+    };
+    broadcast.toAll({ type: 'ai.responseLength', level });
+    console.log(`[realtime-proxy] Gemini set_response_length(${level}) — reconnecting to apply`);
+    if (providerWs) providerWs.close();
+    connectToGemini();
+  }
+
+  /**
+   * search_song and import_requested_song do NOT change instructions/setup,
+   * so — unlike set_response_length — they use Gemini's normal live
+   * tool-response channel without any reconnect.
+   */
+  async function handleGeminiSearchSongCall(call) {
+    const query = (call.args?.query || '').trim();
+    if (!query) {
+      sendGeminiToolResponse(call.id, call.name, { ok: false, error: '缺少搜尋關鍵字' });
+      return;
+    }
+    try {
+      const results = await youtubeSearch.searchYoutube(query, 5);
+      sendGeminiToolResponse(call.id, call.name, {
+        ok: true,
+        results: results.map((r) => ({ videoId: r.videoId, title: r.title, channel: r.channel, durationSeconds: r.durationSeconds })),
+      });
+    } catch (err) {
+      sendGeminiToolResponse(call.id, call.name, { ok: false, error: err.message });
+    }
+  }
+
+  function handleGeminiImportSongCall(call) {
+    const { videoId, title, artist } = call.args || {};
+    if (!videoId || !title) {
+      sendGeminiToolResponse(call.id, call.name, { ok: false, error: '缺少 videoId 或 title' });
+      return;
+    }
+    if (!voiceImportGuard.canImport()) {
+      sendGeminiToolResponse(call.id, call.name, { ok: false, error: '本場演出的語音下載次數已達上限，請改用 /control 手動匯入' });
+      return;
+    }
+    voiceImportGuard.recordImport();
+    sendGeminiToolResponse(call.id, call.name, { ok: true, message: '已開始下載，大約需要一分鐘，完成後會加入歌曲目錄' });
+    runVoiceTriggeredImport(videoId, title, artist);
+  }
+
+  /**
+   * Starts the real 30-90s download in the background — the tool response
+   * (both providers) is only an immediate ack. announceImportCompletion()
+   * injects a follow-up context note once the download actually finishes or
+   * fails, reusing the same clientContent/conversation.item.create channel
+   * already used to seed short-term memory on reconnect (see
+   * server/lib/realtime-session.js buildGeminiSeedTurns/buildOpenAISeedItems).
+   */
+  function runVoiceTriggeredImport(videoId, title, artist) {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    songImporter.importSong({ url, title, artist: artist || '未知藝人', tags: [] })
+      .then(() => announceImportCompletion(title, true))
+      .catch((err) => {
+        console.error('[realtime-proxy] voice-triggered import failed:', err.message);
+        announceImportCompletion(title, false, err.message);
+      });
+  }
+
+  function announceImportCompletion(title, success, errorMessage) {
+    // The session may have ended (operator clicked 結束) before a 30-90s
+    // import finished — nothing to announce to in that case.
+    if (!providerWs || providerWs.readyState !== WebSocket.OPEN) return;
+    const text = success
+      ? `（系統提示：剛才請求下載的《${title}》已下載完成，已加入歌曲目錄。）`
+      : `（系統提示：剛才請求下載的《${title}》下載失敗：${errorMessage || '未知錯誤'}。）`;
+    if (activeProvider === 'openai') {
+      providerWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+      }));
+      providerWs.send(JSON.stringify({ type: 'response.create' }));
+    } else {
+      const seed = buildGeminiSeedTurns([{ role: 'user', text }]);
+      if (seed) providerWs.send(JSON.stringify(seed));
+    }
+  }
+
   function attachProviderHandlers(ws, provider) {
     ws.on('message', (raw) => {
       let message;
@@ -148,6 +416,14 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
       if (provider === 'gemini' && message.setupComplete) {
         geminiReady = true;
         console.log('[realtime-proxy] Gemini setupComplete — session ready');
+        // Short-term memory: seed recent conversation turns (see the same
+        // comment in handleOpenAIEvent's session.updated branch) before
+        // enabling microphone audio below. Gemini's own docs document
+        // clientContent as supported for exactly this — seeding initial
+        // context history — unlike a role:"system" live update, which is
+        // confirmed broken (see the correction note atop realtime-session.js).
+        const seed = buildGeminiSeedTurns(sessionConfig.recentTranscript);
+        if (seed) ws.send(JSON.stringify(seed));
         sendToClient(clientWs, { type: 'session.created', provider: 'gemini' });
         sendToClient(clientWs, { type: 'proxy.ready', provider: 'gemini' });
         return; // don't forward setupComplete itself to the browser
@@ -194,7 +470,16 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
       ws.send(JSON.stringify(buildOpenAIConnectSession({
         instructions: sessionConfig.instructions,
         voice: sessionConfig.voice,
+        tools: buildOpenAITools(sessionConfig.enabledTools),
       })));
+      // Short-term memory: this handler fires exactly once per actual OpenAI
+      // WebSocket connection (unlike 'session.updated', which also acks every
+      // later live instructions-only update) — the right place to seed recent
+      // conversation turns exactly once on a reconnect. See the header comment
+      // in realtime-session.js and Control's state.recentTranscript.
+      for (const seedItem of buildOpenAISeedItems(sessionConfig.recentTranscript)) {
+        ws.send(JSON.stringify(seedItem));
+      }
       sendToClient(clientWs, { type: 'proxy.connected', provider: 'openai' });
     });
   }
@@ -210,6 +495,7 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
         instructions: sessionConfig.instructions,
         voiceName: sessionConfig.voice,
         modelName: apiKeys.geminiLive,
+        tools: buildGeminiTools(sessionConfig.enabledTools),
       })));
       // session.created is sent later, when setupComplete arrives
       sendToClient(clientWs, { type: 'proxy.connected', provider: 'gemini' });

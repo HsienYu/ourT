@@ -40,11 +40,16 @@ const DEFAULT_SETTINGS = {
   ktv: {
     autoRewrite:    false,
     defaultVariant: 'gender-swap',
+    // Optional override for the POST /api/ktv/analyze system prompt. Empty
+    // string means "use the built-in default prompt" (server/index.js).
+    songAnalysisPrompt: '',
   },
   yolo: {
     confidence: 0.45,
-    model:      'yolov8n.pt',
     fpsTarget:  30,
+    // Note: `model` (yolov8n.pt) was intentionally removed — the real YOLO
+    // pipeline (app2-yolo/config.yaml) never read this Node-side copy; it was
+    // dead configuration.
   },
   audio: {
     inputDeviceId: '',
@@ -56,6 +61,16 @@ const DEFAULT_SETTINGS = {
   // override), so operators can tune during rehearsal and quickly recall a
   // known-good combination during the show. Expandable — not fixed at 4.
   characterPresets: [],
+  // System-capability toggles for the AI Realtime dialogue. Distinct from
+  // characterPresets (artistic per-character variations) — these gate
+  // technical features that apply show-wide regardless of which character
+  // preset is loaded. Both require ending/restarting the AI session to take
+  // effect, since tool declarations are connect-time-only on both providers
+  // (same constraint as a voice change).
+  aiFeatures: {
+    voiceLengthControl: true,  // AI can voice-adjust its own response length
+    voiceSongImport:    false, // AI can search/import KTV songs by voice request (opt-in: resource/cost risk)
+  },
 };
 
 let settingsCache = null;
@@ -271,6 +286,12 @@ function getModelsForProvider(provider) {
     claude:    ['claude-sonnet-4-5', 'claude-opus-4', 'claude-haiku-4-5'],
     groq:      ['llama-3.3-70b-versatile', 'llama-4-scout', 'qwen3-32b'],
     mistral:   ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'],
+    // OpenAI TEXT-generation model (lyricsRewrite/songAnalysis), distinct from
+    // `openai` above which is the Realtime VOICE model list. Static like
+    // claude/groq/mistral — OpenAI's text models.list isn't fetched live here.
+    // De-duplicated: base.openai's default ('gpt-4.1-mini') already appears
+    // in the static suffix, so a naive [base.openai, ...] would list it twice.
+    openaiText: [...new Set([base.openai, 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini', 'gpt-4o'])],
     geminiLive: [base.geminiLive, 'gemini-2.5-flash-native-audio-preview'],
     openaiVoice: [base.openaiVoice, 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
     geminiVoice: [base.geminiVoice, 'Puck', 'Charon', 'Kore', 'Fenrir', 'Leda'],
