@@ -99,6 +99,13 @@ function ensureSongsDirectory() {
   if (IS_PACKAGED) seedSongsDirectory(BUNDLED_SONGS_DIR, RUNTIME_SONGS_DIR);
 }
 
+function buildServerPath() {
+  // Apps launched from Finder do not inherit the user's shell PATH, so include
+  // the two standard Homebrew locations used by yt-dlp and ffmpeg on macOS.
+  const inherited = process.env.PATH ? process.env.PATH.split(path.delimiter) : [];
+  return [...new Set(['/opt/homebrew/bin', '/usr/local/bin', ...inherited])].join(path.delimiter);
+}
+
 // ── Server start ───────────────────────────────────────────────────────────────
 function startServer() {
   return new Promise((resolve, reject) => {
@@ -110,6 +117,7 @@ function startServer() {
         OURT_LEGACY_SETTINGS_PATH: path.join(SERVER_DIR, 'settings.json'),
         OURT_LEGACY_ENV_PATH: LEGACY_ENV_PATH,
         OURT_SONGS_DIR: IS_PACKAGED ? RUNTIME_SONGS_DIR : BUNDLED_SONGS_DIR,
+        PATH: buildServerPath(),
         NODE_ENV: 'production',
       },
       silent: true,  // capture stdout/stderr

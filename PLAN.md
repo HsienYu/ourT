@@ -494,3 +494,17 @@ manual protocol.
 - [todo] Manual packaged-app verification: select, queue, and directly play a
   catalog song from Control, both while idle and while another song is active;
   switch into KTV and confirm the Audience popup opens once
+
+## Phase 16 — Packaged yt-dlp Discovery [active]
+
+User reported `搜尋失敗：spawn yt-dlp ENOENT` in the packaged App. The machine
+has `yt-dlp` at `/opt/homebrew/bin/yt-dlp`; Finder-launched Electron did not
+inherit the interactive shell PATH containing that directory.
+
+- [done] Pass Apple Silicon and Intel Homebrew bin directories to the packaged
+  server PATH, covering both search and audio download
+- [done] Replace raw ENOENT output with an actionable zh-TW install/restart
+  message
+- [done] Unit test the missing-executable error path
+- [todo] Manual packaged-app verification: search YouTube after rebuilding and
+  confirm `yt-dlp --version` is discoverable through the Control search flow

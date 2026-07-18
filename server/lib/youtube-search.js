@@ -75,6 +75,10 @@ function searchYoutube(query, limit = DEFAULT_LIMIT, execFileImpl = execFile) {
       { maxBuffer: 10 * 1024 * 1024, timeout: SEARCH_TIMEOUT_MS },
       (err, stdout, stderr) => {
         if (err) {
+          if (err.code === 'ENOENT') {
+            reject(new Error('yt-dlp 找不到。請先執行：brew install yt-dlp，然後重新開啟 ourT。'));
+            return;
+          }
           reject(new Error(stderr?.toString().trim() || err.message));
           return;
         }

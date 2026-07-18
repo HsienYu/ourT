@@ -101,3 +101,12 @@ test('searchYoutube — rejects with stderr message on yt-dlp failure', () => {
     (err) => assert.match(err.message, /command not found/),
   );
 });
+
+test('searchYoutube — explains how to install yt-dlp when the executable is unavailable', () => {
+  const missingExecutable = Object.assign(new Error('spawn yt-dlp ENOENT'), { code: 'ENOENT' });
+  const fakeExecFile = (cmd, args, opts, cb) => cb(missingExecutable, '', '');
+  return searchYoutube('x', 5, fakeExecFile).then(
+    () => assert.fail('should have rejected'),
+    (err) => assert.match(err.message, /yt-dlp 找不到.*brew install yt-dlp/),
+  );
+});

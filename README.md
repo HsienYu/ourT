@@ -174,7 +174,9 @@ node scripts/import-song.js \
 Same underlying pipeline as Option A (`server/lib/song-importer.js`) — useful
 for scripting a batch import ahead of a show.
 
-Requires: `brew install yt-dlp ffmpeg`
+Requires: `brew install yt-dlp ffmpeg`. The packaged macOS App explicitly
+searches both Apple Silicon Homebrew (`/opt/homebrew/bin`) and Intel Homebrew
+(`/usr/local/bin`), so restart the App after installing either tool.
 
 #### Option C: Manual
 
@@ -413,7 +415,8 @@ relaunch.
 | LRC lyrics not syncing | Whisper timing slightly off for that song | Use the 歌詞偏移 slider in `/control`'s KTV section while the song plays — no need to hand-edit `songs/index.json` |
 | KTV auto-rewrite not working | Auto-rewrite disabled | Enable KTV 自動改寫 in `/control` → `系統設定` |
 | NDI stream not visible | NDI SDK not installed | Download from ndi.video, then `pip install ndi-python` |
-| 搜尋並匯入歌曲 search returns no results / errors | `yt-dlp` not installed, or YouTube rate-limiting | `brew install yt-dlp`; if already installed, `brew upgrade yt-dlp` (YouTube changes break older versions) |
+| `搜尋失敗：spawn yt-dlp ENOENT` | Finder-launched Electron did not inherit the Homebrew PATH, or `yt-dlp` is absent | Update to the latest App, then restart it. If the new message still says `yt-dlp 找不到`, run `brew install yt-dlp`; otherwise update with `brew upgrade yt-dlp` |
+| 搜尋並匯入歌曲 search returns no results / errors | YouTube rate-limiting or an outdated `yt-dlp` | Run `brew upgrade yt-dlp` and retry later if YouTube is rate-limiting |
 | Song import stuck on `轉錄歌詞中…` | No OpenAI key and no local `whisper` installed | Add an OpenAI key in `系統設定`, or `pip install openai-whisper` for the local fallback |
 | Projection fullscreen toggle only hides the menu bar, doesn't resize | Fixed — uses platform-native `setFullScreen()`, not kiosk mode (kiosk had known Electron/macOS reliability bugs) | Update to latest; if still stuck, check the Electron main-process console for `[main] projection fullscreen →` log lines |
 | Saving an AI character preset silently does nothing in the packaged app | Fixed — Electron does not implement `window.prompt()` at all; preset naming now uses an in-page modal | Update to latest; verify in the actual `.app`, not just a browser tab, since `window.prompt()` works fine in a regular browser but throws in Electron |
