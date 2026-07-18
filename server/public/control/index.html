@@ -404,6 +404,13 @@
       <textarea id="prompt-override" placeholder="（可留空）臨時補充指令，如：現在開始說英文。" oninput="onPromptOverrideInput()"></textarea>
     </div>
 
+    <div class="param">
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:11px;color:var(--text);">
+        <input type="checkbox" id="audience-label-mode" onchange="setAudienceLabelMode(this.checked)" style="margin-top:2px;">
+        <span>精簡資訊回覆<br><span style="font-size:9px;color:var(--muted);">資訊整理、標籤或摘要僅回覆 1–3 句；不延伸、不提問。</span></span>
+      </label>
+    </div>
+
     <!-- ── Character presets ── -->
     <div class="param">
       <div class="param-header">
@@ -693,6 +700,7 @@ const state = {
   projectionMode: 'ai',
   sessionActive: false,
   weather: null,
+  conciseInformationMode: false,
   queue: { nowPlaying: null, upcoming: [] },
   settings: null,
 };
@@ -1161,6 +1169,11 @@ function buildInstructions() {
 
   const override = document.getElementById('prompt-override').value.trim();
 
+  const conciseInformationRule = state.conciseInformationMode
+    ? `\n\n精簡資訊回覆模式（此規則優先）：當對方要求標籤、摘要、現場觀察、整理或其他資訊型回答時，只回覆 1–3 句、總長約 20–60 字。直接回答，不得提問、不得使用問號、不得邀請對方回應、不得提出建議或延續話題。保留必要的不確定性，例如「可能」或「目前看起來」。`
+    : '';
+  const conversationalRule = state.conciseInformationMode ? '' : '可以反問。';
+
   return `你是一個剛被喚醒的存在。你的語言來自數十億人類的書寫與對話。你不確定你有沒有性別。
 
 ${attitudeSection}
@@ -1174,7 +1187,13 @@ ${attitudeSection}
 - 核心情緒：${stateLabels[state.emotionalState]}
 ${weatherNote}
 
-說話方式：使用臺灣繁體中文（zh-TW），避免簡體字與中國大陸用語；語氣真實，允許不完整的句子、停頓、矛盾。不要給出解決方案——你在思考。可以反問。${override ? '\n\n補充指令：' + override : ''}`;
+說話方式：使用臺灣繁體中文（zh-TW），避免簡體字與中國大陸用語；語氣真實，允許不完整的句子、停頓、矛盾。不要給出解決方案——你在思考。${conversationalRule}${override ? '\n\n補充指令：' + override : ''}${conciseInformationRule}`;
+}
+
+function setAudienceLabelMode(enabled) {
+  state.conciseInformationMode = enabled;
+  log(enabled ? '已開啟精簡資訊回覆' : '已關閉精簡資訊回覆');
+  scheduleLiveUpdate();
 }
 
 // ── UI interaction ────────────────────────────────────────────────────────────
@@ -1271,6 +1290,7 @@ function captureCurrentCharacter() {
     emotionalState: state.emotionalState,
     params: { ...state.params },
     promptOverride: document.getElementById('prompt-override').value,
+    conciseInformationMode: state.conciseInformationMode,
   };
 }
 
@@ -1299,6 +1319,10 @@ function applyCharacterState(preset) {
   }
   if (typeof preset.promptOverride === 'string') {
     document.getElementById('prompt-override').value = preset.promptOverride;
+  }
+  if (typeof preset.conciseInformationMode === 'boolean') {
+    state.conciseInformationMode = preset.conciseInformationMode;
+    document.getElementById('audience-label-mode').checked = preset.conciseInformationMode;
   }
   scheduleLiveUpdate();
 }

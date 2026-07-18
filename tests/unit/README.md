@@ -31,7 +31,8 @@ npm test
 - `settings-presets.test.js` — covers the character-preset CRUD logic in
   `server/lib/settings.js` (`getPresets`/`savePreset`/`deletePreset`), using an
   isolated temp settings file per test via `OURT_SETTINGS_PATH` so it never
-  touches the real `server/settings.json`.
+  touches the real `server/settings.json`, including concise-information mode
+  persistence across overwrite and reload.
 - `provider-catalog.test.js` — covers `server/lib/provider-catalog.js`: the
   static voice catalogs (accuracy checks against each provider's documented
   enum) and the live model-fetch/cache/fallback logic, using an injectable

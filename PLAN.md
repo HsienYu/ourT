@@ -508,3 +508,20 @@ inherit the interactive shell PATH containing that directory.
 - [done] Unit test the missing-executable error path
 - [todo] Manual packaged-app verification: search YouTube after rebuilding and
   confirm `yt-dlp --version` is discoverable through the Control search flow
+
+## Phase 17 — Concise Information Replies [active]
+
+User clarified that audience labels are only one example: at times they need
+concise information organization during the AI dialogue, rather than a long
+conversational extension. This is a Realtime instruction feature, not KTV
+analysis.
+
+- [done] Add `精簡資訊回覆` Control toggle: information requests receive 1–3
+  short sentences with no questions, invitations, advice, or topic extension
+- [done] Apply the change live for OpenAI and through the existing clean Gemini
+  reconnect path
+- [done] Persist the mode in AI character presets and verify create, overwrite,
+  and reload behavior with a unit test
+- [todo] Manual OpenAI/Gemini rehearsal verification: toggle mode during an
+  active session, request a label/summary/observation, confirm concise direct
+  output, then disable it and confirm normal dialogue resumes

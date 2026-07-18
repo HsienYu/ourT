@@ -84,3 +84,15 @@ test('savePreset — persists across a reload of the settings cache', () => {
   assert.equal(list.length, 1);
   assert.equal(list[0].name, '持久化測試');
 });
+
+test('savePreset — preserves concise-information mode across overwrite and reload', () => {
+  const settings = freshSettingsModule();
+  const [created] = settings.savePreset({ name: '資訊整理', conciseInformationMode: true });
+  assert.equal(created.conciseInformationMode, true);
+
+  const [updated] = settings.savePreset({ id: created.id, name: '一般對話', conciseInformationMode: false });
+  assert.equal(updated.conciseInformationMode, false);
+
+  settings.updateSettings({ ktv: { autoRewrite: false } });
+  assert.equal(settings.getPresets()[0].conciseInformationMode, false);
+});

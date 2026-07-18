@@ -302,7 +302,7 @@ function getPresets() {
 
 /**
  * Save (create or overwrite) a character preset.
- * @param {object} preset - { id?, name, voice, attitude, emotionalState, params, promptOverride }
+ * @param {object} preset - { id?, name, voice, attitude, emotionalState, params, promptOverride, conciseInformationMode }
  *   If `id` matches an existing preset, that slot is overwritten in place.
  *   Otherwise a new preset is appended with a freshly generated id.
  * @returns {Array<object>} the updated preset list
@@ -321,6 +321,7 @@ function savePreset(preset) {
     emotionalState: preset.emotionalState || null,
     params: preset.params || null,
     promptOverride: preset.promptOverride || '',
+    conciseInformationMode: !!preset.conciseInformationMode,
   };
   const existingIndex = list.findIndex((item) => item.id === entry.id);
   if (existingIndex !== -1) {

@@ -85,6 +85,8 @@ once with `gemini` — since the expected behavior genuinely differs.
 | Change emotional state to `憤怒` without clicking `更新參數` | Monitor params row updates immediately; log shows an automatic push; session stays connected | |
 | Speak again after either change above | AI response reflects the new state | |
 | Type in `額外指令注入` textarea | Live update fires ~400ms after you stop typing (not on every keystroke); session stays connected | |
+| Enable `精簡資訊回覆`, then ask for a label, summary, or audience observation | Without reconnecting, AI replies in 1–3 short sentences; it does not ask a question, invite a response, or continue the topic | |
+| Disable `精簡資訊回覆`, then ask the same kind of question | Normal open-ended conversational behavior returns | |
 | Change voice (e.g. Marin → Cedar) | Log shows `聲音已變更，需要重新連線才能套用…`; session reconnects (badge briefly drops then returns to `◉ 通話中`) | |
 | Speak again after voice reconnect | New voice is audible | |
 | Click `更新參數` manually | Still works as an explicit immediate push | |
@@ -96,6 +98,7 @@ once with `gemini` — since the expected behavior genuinely differs.
 | With a session active, drag a slider without clicking `更新參數` | Log shows `Gemini Live 無法在連線中更新設定，正在重新連線以套用變更…`; session reconnects (badge drops then returns to `◉ 通話中`) — this is expected, not a bug | |
 | Watch the Electron/server console during the reconnect | `gemini WebSocket closed: 1000` (clean close from our own reconnect) — must NOT be `1007 Request contains an invalid argument` | |
 | Change emotional state / attitude / prompt override | Same reconnect behavior each time | |
+| Enable or disable `精簡資訊回覆` during a session | One clean reconnect occurs; after reconnection, information-style requests receive only 1–3 short sentences with no follow-up question | |
 | Drag a slider back and forth quickly (multiple ticks within 400ms) | Only ONE reconnect happens (debounced), not one per tick | |
 | Speak again after any reconnect | AI response reflects the new state | |
 | Change voice | Same reconnect path (no different from any other parameter, since Gemini always reconnects) | |
@@ -112,6 +115,7 @@ browser-only test would not have caught the original bug.
 | Check | Expected | Evidence |
 |---|---|---|
 | Tune voice/attitude/state/sliders, click `+ 儲存目前設定為新預設` | A custom in-page dialog appears (not a native OS prompt) asking for a name | |
+| Save a preset with `精簡資訊回覆` enabled, switch it off, then reload the preset | The checkbox returns to enabled and the next AI instruction update uses concise information behavior | |
 | Type a name and click `確認` | New numbered row appears in `AI 角色預設` list with that name | |
 | Click `+ 儲存目前設定為新預設` again and click `取消` instead | No new preset is created | |
 | Change several params away from the saved preset, then click the preset's load button | All params/voice snap back to the saved combination; live update fires (always reconnects on Gemini, or if voice differs on OpenAI) | |

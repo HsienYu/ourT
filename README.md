@@ -91,7 +91,8 @@ Either provider is selectable in `/control` → `系統設定` → `Realtime 語
 6. Adjust attitude/state/sliders/prompt override → pushed live automatically (debounced ~400ms), no button needed. Behavior differs by provider: OpenAI updates in place; **Gemini Live has no live-update mechanism at all and always reconnects** to apply any change (its `setup` message — voice, model, instructions — is one-time only). Voice changes always reconnect on both providers.
 7. **打斷 AI** interrupts current AI response instantly (also triggers automatically when the performer talks over the AI — barge-in)
 8. **清除投影文字** wipes the projection screen
-9. **AI 角色預設**: save the current voice/attitude/state/sliders/prompt as a named, numbered preset for instant recall during the show; expandable list, not capped at 4
+9. **精簡資訊回覆**: toggle it on for labels, summaries, and observations that should answer directly in 1–3 short sentences without questions or topic extension; OpenAI applies it live, while Gemini reconnects.
+10. **AI 角色預設**: save the current voice/attitude/state/sliders/prompt and concise-information mode as a named, numbered preset for instant recall during the show; expandable list, not capped at 4
 
 ### Voice options
 
