@@ -26,6 +26,13 @@ function freshSongQueueModule(initialCatalog) {
   return { songQueue: require(modulePath), catalogPath };
 }
 
+test('bundled catalog — excludes the unavailable sample song', () => {
+  const catalogPath = path.join(__dirname, '../../songs/index.json');
+  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+
+  assert.equal(catalog.some((song) => song.id === 'sample-001'), false);
+});
+
 test('addSongToCatalog — appends a new entry and persists to disk', () => {
   const { songQueue, catalogPath } = freshSongQueueModule([]);
   const catalog = songQueue.addSongToCatalog({ id: 'song-1', title: 'A', artist: 'B', lrcOffset: 0 });

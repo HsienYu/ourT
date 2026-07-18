@@ -6,8 +6,8 @@ server/settings.json
 .env
 *.env
 
-# electron-builder output — the extraResources build step copies
-# server/settings.json (API keys) into these bundles. Never commit them.
+# electron-builder output — settings.json and .env files are excluded from
+# the bundle. Never commit build artifacts.
 ourT-electron/dist/
 
 # Song media (add your own files, don't commit large binaries)

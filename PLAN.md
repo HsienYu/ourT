@@ -695,3 +695,18 @@ deliberate boundary and is manual-protocol verified instead
 - [done] Reuse the outlined AI feature toggle style for 精簡資訊回覆
 - [done] Verify the live update checkbox behavior remains unchanged; 99 unit
   tests pass and `git diff --check` is clean
+
+## Phase 13 — Remove Unavailable Sample Song [done]
+
+- [done] Remove the bundled unavailable sample song from the KTV catalog
+- [done] Add a regression test preventing it from being selectable again;
+  confirmed red first, then 100 unit tests passing
+
+## Phase 14 — Secure Electron Build [done]
+
+- [done] Rebuild arm64 and x64 Electron DMGs
+- [done] Confirm bundled resources exclude `settings.json` and `.env`
+- [done] Scan generated App bundles for secrets without exposing values:
+  `Resources/server` is clean on both architectures. The only three fully
+  redacted whole-bundle matches are Electron's upstream `resources.pak`, not
+  ourT files or user credentials.
