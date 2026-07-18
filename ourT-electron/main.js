@@ -51,6 +51,12 @@ let expiryTimer    = null;
 // ── App ready ──────────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   if (exitIfBuildExpired()) return;
+  app.setAboutPanelOptions({
+    applicationName: 'ourT',
+    applicationVersion: app.getVersion(),
+    copyright: 'Copyright © 2026 chenghsienyu',
+    credits: 'Developed by chenghsienyu\nLicensed under Creative Commons Attribution 4.0 International (CC BY 4.0).',
+  });
   ensureSettingsDirectory();
   ensureSongsDirectory();
   await startServer();
@@ -325,6 +331,10 @@ function createTray() {
       click: () => openAudienceWindow(),
     },
     { type: 'separator' },
+    {
+      label: '關於 ourT',
+      click: () => app.showAboutPanel(),
+    },
     {
       label: '複製觀眾點歌網址',
       click: () => {

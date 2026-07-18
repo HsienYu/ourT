@@ -12,8 +12,8 @@
     "test": "node --test ../tests/unit/*.test.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "chenghsienyu",
+  "license": "CC-BY-4.0",
   "type": "commonjs",
   "dependencies": {
     "dotenv": "^17.4.2",

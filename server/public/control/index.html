@@ -212,6 +212,29 @@
   .btn.danger:hover  { background: rgba(255,96,128,0.08); }
   .btn.warn    { border-color: var(--warn); color: var(--warn); }
 
+  /* ── AI feature toggles ── */
+  .feature-toggle, .settings .feature-toggle {
+    position: relative; display: block; cursor: pointer;
+  }
+  .feature-toggle input, .settings .feature-toggle input {
+    position: absolute; opacity: 0; pointer-events: none;
+  }
+  .feature-toggle-box {
+    display: block; padding: 10px; border: 1px solid var(--muted);
+    background: transparent; color: var(--muted); font-size: 11px;
+    line-height: 1.5; transition: all 0.2s;
+  }
+  .feature-toggle-detail { display: block; margin-top: 3px; font-size: 9px; color: var(--muted); }
+  .feature-toggle input:checked + .feature-toggle-box {
+    border-color: var(--ok); color: var(--ok); background: rgba(68,255,170,0.07);
+  }
+  .feature-toggle input:checked + .feature-toggle-box .feature-toggle-detail { color: var(--ok); }
+  .feature-toggle input:focus-visible + .feature-toggle-box { outline: 1px solid var(--text); outline-offset: 2px; }
+  .feature-toggle:hover .feature-toggle-box { border-color: #777; color: var(--text); }
+  .feature-toggle:hover .feature-toggle-detail { color: var(--text); }
+  .feature-toggle:hover input:checked + .feature-toggle-box { border-color: var(--ok); color: var(--ok); }
+  .feature-toggle:hover input:checked + .feature-toggle-box .feature-toggle-detail { color: var(--ok); }
+
   /* ── Weather widget ── */
   .weather-box {
     background: #000; border: 1px solid var(--border);
@@ -406,9 +429,9 @@
     </div>
 
     <div class="param">
-      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:11px;color:var(--text);">
-        <input type="checkbox" id="audience-label-mode" onchange="setAudienceLabelMode(this.checked)" style="margin-top:2px;">
-        <span>精簡資訊回覆<br><span style="font-size:9px;color:var(--muted);">資訊整理、標籤或摘要僅回覆 1–3 句；不延伸、不提問。</span></span>
+      <label class="feature-toggle">
+        <input type="checkbox" id="audience-label-mode" onchange="setAudienceLabelMode(this.checked)">
+        <span class="feature-toggle-box">精簡資訊回覆<span class="feature-toggle-detail">資訊整理、標籤或摘要僅回覆 1–3 句；不延伸、不提問。</span></span>
       </label>
     </div>
 
@@ -533,13 +556,13 @@
     <summary>AI 對話功能開關</summary>
     <div style="font-size:9px;color:var(--muted);margin-top:8px;">變更後需結束並重新開始/連線才會套用（與更換聲音相同限制 — 兩個提供者的工具宣告都僅能在連線當下設定）。</div>
     <div class="settings-grid" style="margin-top:8px;">
-      <label class="wide" style="flex-direction:row;align-items:flex-start;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="setting-voice-length-control" style="margin-top:2px;">
-        <span>語音調整回應長度<br><span style="font-size:9px;color:var(--muted);">允許表演者用語音要求「簡短一點」或「多說一點」，AI 會自行呼叫工具調整之後的回應長度。</span></span>
+      <label class="wide feature-toggle">
+        <input type="checkbox" id="setting-voice-length-control">
+        <span class="feature-toggle-box">語音調整回應長度<span class="feature-toggle-detail">允許表演者用語音要求「簡短一點」或「多說一點」，AI 會自行呼叫工具調整之後的回應長度。</span></span>
       </label>
-      <label class="wide" style="flex-direction:row;align-items:flex-start;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="setting-voice-song-import" style="margin-top:2px;">
-        <span>語音搜尋並下載歌曲<br><span style="font-size:9px;color:var(--muted);">允許表演者用語音要求 AI 搜尋 KTV 歌曲；AI 會先讀出搜尋結果確認，確認後才開始下載。預設關閉，較耗資源。</span></span>
+      <label class="wide feature-toggle">
+        <input type="checkbox" id="setting-voice-song-import">
+        <span class="feature-toggle-box">語音搜尋並下載歌曲<span class="feature-toggle-detail">允許表演者用語音要求 AI 搜尋 KTV 歌曲；AI 會先讀出搜尋結果確認，確認後才開始下載。預設關閉，較耗資源。</span></span>
       </label>
       <div class="wide btn-row"><button class="btn primary" type="button" onclick="saveAiFeatureToggles()">儲存 AI 對話功能開關</button></div>
     </div>

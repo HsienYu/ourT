@@ -676,3 +676,22 @@ deliberate boundary and is manual-protocol verified instead
   `/api/settings` (`aiFeatures` present, correct defaults), and
   `/api/settings/models?provider=openaiText|claude` all verified manually
   against a running instance before commit
+
+## Phase 10 — Attribution and License [done]
+
+- [done] Add Creative Commons Attribution 4.0 license and developer metadata
+- [done] Show developer and license information in Electron's About panel
+- [done] Verify package metadata, Electron main-process syntax, 99 unit tests,
+  and arm64/x64 DMG builds
+
+## Phase 11 — AI Feature Toggle Styling [done]
+
+- [done] Restyle AI feature toggles as outlined rectangular controls
+- [done] Verify enabled and disabled controls retain the existing checkbox IDs
+  and save behavior; 99 unit tests pass and `git diff --check` is clean
+
+## Phase 12 — Concise Reply Toggle Styling [done]
+
+- [done] Reuse the outlined AI feature toggle style for 精簡資訊回覆
+- [done] Verify the live update checkbox behavior remains unchanged; 99 unit
+  tests pass and `git diff --check` is clean
