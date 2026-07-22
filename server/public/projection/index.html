@@ -249,6 +249,18 @@
   }
   #analysis-close:hover { color: var(--text); border-color: var(--text); }
 
+  /* ── Stage script ── */
+  #script-view {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; padding: 7vh 10vw 9vh;
+  }
+  #script-lines { width: 100%; max-width: 1100px; font-size: clamp(20px, 2vw, 32px); line-height: 1.65; }
+  .script-line { min-height: 1.65em; color: var(--text); white-space: pre-wrap; width: 78%; }
+  .script-line.left { margin-right: auto; text-align: left; }
+  .script-line.right { margin-left: auto; text-align: right; }
+  .script-line.center { width: 100%; text-align: center; color: var(--muted); font-size: 0.78em; }
+  #script-page { position: absolute; right: 3vw; bottom: 4vh; color: var(--muted); font-size: 16px; letter-spacing: 2px; }
+
   /* ── Idle ── */
   #idle-view {
     position: absolute; inset: 0;
@@ -280,15 +292,22 @@
 </div>
 
 <!-- KTV view -->
-<div id="ktv-view" class="hidden">
+  <div id="ktv-view" class="hidden">
   <div id="ktv-song-info">
     <div id="ktv-title">—</div>
     <div id="ktv-artist">—</div>
     <div id="ktv-status"></div>
   </div>
+
   <div id="ktv-lyrics"></div>
   <audio id="ktv-audio" preload="auto"></audio>
   <div id="ktv-progress-wrap"><div id="ktv-progress-fill"></div></div>
+</div>
+
+<!-- Stage script view -->
+<div id="script-view" class="hidden">
+  <div id="script-lines"></div>
+  <div id="script-page"></div>
 </div>
 
 <!-- Analysis overlay -->
@@ -317,6 +336,11 @@ let currentLyricsVariant = 'original';
 let currentLrcOffset     = 0; // seconds; positive delays lyrics, negative advances them
 let lyricsStyle          = 'line';   // 'line' | 'wipe'
 let currentWipeColor     = 'var(--accent2)';
+let stageScriptText      = '';
+let stageScriptPage      = 0;
+let stageScriptPageCount = 1;
+let stageScriptLines     = [];
+let lyricsLoadToken      = 0;
 
 // Variant → wipe colour mapping
 const VARIANT_COLORS = {
@@ -338,7 +362,15 @@ function setMode(mode) {
   document.getElementById('idle-view').classList.toggle('hidden', mode !== 'idle');
   document.getElementById('ai-view').classList.toggle('hidden', mode !== 'ai');
   document.getElementById('ktv-view').classList.toggle('hidden', mode !== 'ktv');
+  document.getElementById('script-view').classList.toggle('hidden', mode !== 'script');
   document.getElementById('status-mode').textContent = mode.toUpperCase();
+}
+
+function renderStageScript() {
+  document.getElementById('script-lines').innerHTML = stageScriptLines.map((line) =>
+    `<div class="script-line ${line.side || 'left'}">${escHtml(line.text || '')}</div>`,
+  ).join('');
+  document.getElementById('script-page').textContent = `${stageScriptPage + 1} / ${stageScriptPageCount}`;
 }
 
 // ── Cursor / border state ─────────────────────────────────────────────────────
@@ -392,7 +424,7 @@ function escHtml(s) {
 function loadSong(item) {
   const s = item.song;
   currentSongId = s.id;
-  currentLyricsVariant = item.lyricsVariant || 'original';
+  currentLyricsVariant = s.activeLyricsVariant || item.lyricsVariant || 'original';
   currentLrcOffset = s.lrcOffset || 0;
 
   document.getElementById('ktv-title').textContent  = s.title;
@@ -439,17 +471,20 @@ function setWipeColor(variant) {
 }
 
 function loadLyrics(songId, variant) {
+  const token = ++lyricsLoadToken;
   fetch(`/api/songs/${songId}/lyrics?variant=${variant}`)
     .then((r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.text();
     })
     .then((lrc) => {
+      if (token !== lyricsLoadToken) return;
       lrcLines = parseLrc(lrc);
       currentLineIndex = -1;
       renderLyrics(-1);
     })
     .catch((error) => {
+      if (token !== lyricsLoadToken) return;
       lrcLines = [];
       document.getElementById('ktv-lyrics').textContent = '歌詞載入失敗，請確認 LRC 檔案是否存在';
       setKtvStatus(`歌詞錯誤：${error.message}`);
@@ -603,7 +638,7 @@ function handleBusMessage(msg) {
 
     // ── Transcript ────────────────────────────────────────────────────────────
     case 'transcript.user.delta':
-      if (currentMode !== 'ai') setMode('ai');
+      if (currentMode !== 'ai' && currentMode !== 'script') setMode('ai');
       setCursorState('idle');
       appendTranscriptDelta('user', msg.delta);
       break;
@@ -613,7 +648,7 @@ function handleBusMessage(msg) {
       break;
 
     case 'transcript.ai.delta':
-      if (currentMode !== 'ai') setMode('ai');
+      if (currentMode !== 'ai' && currentMode !== 'script') setMode('ai');
       setCursorState('speaking');
       appendTranscriptDelta('ai', msg.delta);
       break;
@@ -635,6 +670,19 @@ function handleBusMessage(msg) {
     case 'projection.mode':
       if (msg.mode === 'ai')  setMode('ai');
       if (msg.mode === 'ktv') setMode('ktv');
+      break;
+
+    case 'stage_script.state':
+      stageScriptText = msg.text || '';
+      stageScriptPage = msg.page || 0;
+      stageScriptPageCount = msg.pageCount || 1;
+      stageScriptLines = Array.isArray(msg.lines) ? msg.lines : [];
+      renderStageScript();
+      setMode('script');
+      break;
+
+    case 'stage_script.hide':
+      setMode('ai');
       break;
 
     // ── Lyric style toggle ────────────────────────────────────────────────────
@@ -667,6 +715,7 @@ function handleBusMessage(msg) {
     // ── LLM lyrics override (hot-swap mid-song) ───────────────────────────────
     case 'ktv.lyrics.override':
       if (msg.songId === currentSongId) {
+        lyricsLoadToken += 1;
         lrcLines = parseLrc(msg.lrcText);
         currentLineIndex = -1;
         currentLyricsVariant = msg.variant || 'live';
@@ -677,9 +726,9 @@ function handleBusMessage(msg) {
 
     case 'ktv.lyrics.override.cleared':
       if (msg.songId === currentSongId) {
-        currentLyricsVariant = 'original';
-        setWipeColor('original');
-        loadLyrics(currentSongId, 'original');
+        currentLyricsVariant = msg.variant || 'original';
+        setWipeColor(currentLyricsVariant);
+        loadLyrics(currentSongId, currentLyricsVariant);
       }
       break;
 

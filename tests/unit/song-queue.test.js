@@ -83,6 +83,13 @@ test('updateSongOffset — accepts negative offsets', () => {
   assert.equal(updated.lrcOffset, -0.5);
 });
 
+test('updateSongLyricsVariant — persists the generated variant for later playback', () => {
+  const { songQueue, catalogPath } = freshSongQueueModule([{ id: 'song-1', activeLyricsVariant: 'original' }]);
+  const updated = songQueue.updateSongLyricsVariant('song-1', 'gender-swap');
+  assert.equal(updated.activeLyricsVariant, 'gender-swap');
+  assert.equal(JSON.parse(fs.readFileSync(catalogPath, 'utf8'))[0].activeLyricsVariant, 'gender-swap');
+});
+
 test('endSong — clears now playing and broadcasts the authoritative queue state', () => {
   const { songQueue } = freshSongQueueModule([{ id: 'song-1', title: 'A' }]);
   const events = [];

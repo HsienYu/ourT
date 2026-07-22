@@ -62,6 +62,8 @@ live provider connection, real audio hardware, or the actual Electron app.
 | | AI voice heard through speaker | |
 | AI finishes | Monitor: `完成` (green, fades after 2s) | |
 | | Projection: cursor returns to slow blink | |
+| During a long response, change Gemini settings or interrupt AI | No old audio resumes after reconnect/interrupt; Control log has no backlog warning above 1 second | |
+| Force provider/network interruption during a response | Control, Monitor, and Projection leave the speaking state; queued audio stops | |
 
 ---
 
@@ -98,7 +100,7 @@ once with `gemini` — since the expected behavior genuinely differs.
 | With a session active, drag a slider without clicking `更新參數` | Log shows `Gemini Live 無法在連線中更新設定，正在重新連線以套用變更…`; session reconnects (badge drops then returns to `◉ 通話中`) — this is expected, not a bug | |
 | Watch the Electron/server console during the reconnect | `gemini WebSocket closed: 1000` (clean close from our own reconnect) — must NOT be `1007 Request contains an invalid argument` | |
 | Change emotional state / attitude / prompt override | Same reconnect behavior each time | |
-| Enable or disable `精簡資訊回覆` during a session | One clean reconnect occurs; after reconnection, information-style requests receive only 1–3 short sentences with no follow-up question | |
+| Enable or disable `精簡資訊回覆` during a session | One clean reconnect occurs; badge returns to `◉ 通話中`. If the provider closes unexpectedly during setup, Control retries up to three times while the session remains requested. After reconnection, information-style requests receive only 1–3 short sentences with no follow-up question | |
 | Drag a slider back and forth quickly (multiple ticks within 400ms) | Only ONE reconnect happens (debounced), not one per tick | |
 | Speak again after any reconnect | AI response reflects the new state | |
 | Change voice | Same reconnect path (no different from any other parameter, since Gemini always reconnects) | |

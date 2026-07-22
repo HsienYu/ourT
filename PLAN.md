@@ -710,3 +710,25 @@ deliberate boundary and is manual-protocol verified instead
   `Resources/server` is clean on both architectures. The only three fully
   redacted whole-bundle matches are Electron's upstream `resources.pak`, not
   ourT files or user credentials.
+
+## Phase 15 — Realtime Recovery, Lyrics Reliability, and Stage Script [active]
+
+- [done] Add failing tests for Gemini reconnect recovery, lyrics variants, and stage-script navigation
+- [done] Recover Gemini sessions after unexpected provider setup closures
+- [done] Remove unused Node Control YOLO settings and legacy values
+- [done] Make generated lyrics valid, persistent, and reliably selectable on Projection
+- [done] Add generated stage-script reading mode with previous/next controls
+- [done] Run 112 unit tests and build arm64/x64 Electron DMGs
+- [done] Migrate retired Gemini 2.5 text-model selections to `gemini-3.5-flash`
+- [todo] Manual Gemini verification: concise mode/character changes recover to `◉ 通話中`; manual end and KTV pause do not retry
+- [todo] Manual lyrics verification: generated variant before/during playback, Projection reload, server restart, custom rule, and malformed LRC rejection
+- [todo] Manual Projection verification: stage-script legibility, previous/next boundaries, reconnect recovery, and KTV exit to AI view
+
+## Phase 16 — Live Model Catalogs, Script Casting, and Realtime Playback [active]
+
+- [done] Add failing tests for live text-model filtering and stage-script contracts
+- [done] Fetch account-available text models for all supported providers
+- [done] Enforce script length and configure cast/system role with server-authoritative pages
+- [done] Bound audio playback and discard stale provider/session output
+- [done] Run 115 unit tests, package arm64/x64 Electron DMGs, and update manual verification protocols
+- [todo] Manual verification: real provider catalog lists, 1,000+ character scripts with cast rules, and long-response/reconnect audio stability

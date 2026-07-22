@@ -238,14 +238,14 @@ async function generateText({ task, system, prompt, options = {} }) {
     throw new Error('No API keys configured for any provider');
   }
 
-  const model = options.model || require('./settings').getSettings(false).models[providerOrder[0].replace('realtime', '')] || 'gemini-2.5-flash';
+  const model = options.model || require('./settings').getSettings(false).models[providerOrder[0].replace('realtime', '')] || 'gemini-3.5-flash';
   const maxTokens = options.maxTokens || 2048;
 
   let lastError;
   for (const provider of providerOrder) {
     try {
       let text;
-      const modelName = options.model || (require('./settings').getSettings(false).models[provider] || 'gemini-2.5-flash');
+        const modelName = options.model || (require('./settings').getSettings(false).models[provider] || 'gemini-3.5-flash');
 
       switch (provider) {
         case 'claude':

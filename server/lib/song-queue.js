@@ -72,6 +72,18 @@ function updateSongOffset(songId, lrcOffset) {
   return song;
 }
 
+function updateSongLyricsVariant(songId, activeLyricsVariant) {
+  const catalog = loadCatalog();
+  const song = catalog.find((entry) => entry.id === songId);
+  if (!song) return null;
+  song.activeLyricsVariant = activeLyricsVariant;
+  saveCatalog(catalog);
+  for (const item of [...queue, nowPlaying].filter(Boolean)) {
+    if (item.song.id === songId) item.song.activeLyricsVariant = activeLyricsVariant;
+  }
+  return song;
+}
+
 function enqueue(songId, requesterLabel) {
   const catalog = loadCatalog();
   const song = catalog.find((s) => s.id === songId);
@@ -142,5 +154,5 @@ function clearQueue() {
 
 module.exports = {
   init, getCatalog, enqueue, dequeue, endSong, skip, getQueue, clearQueue,
-  addSongToCatalog, updateSongOffset,
+  addSongToCatalog, updateSongOffset, updateSongLyricsVariant,
 };

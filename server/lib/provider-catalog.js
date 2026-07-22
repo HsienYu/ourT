@@ -20,6 +20,12 @@
 'use strict';
 
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const TEXT_FALLBACK_MODELS = {
+  claude: ['claude-sonnet-4-5'],
+  groq: ['llama-3.3-70b-versatile'],
+  mistral: ['mistral-large-latest'],
+  openai: ['gpt-4.1-mini'],
+};
 
 // ── Static voice catalogs (no live endpoint exists for either provider) ─────
 
@@ -53,7 +59,7 @@ const GEMINI_LIVE_VOICES = [
 
 const FALLBACK_MODELS = {
   openaiRealtime: ['gpt-realtime-2.1', 'gpt-realtime-2', 'gpt-realtime'],
-  gemini:         ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3.5-flash'],
+  gemini:         ['gemini-3.5-flash'],
   geminiLive:     ['gemini-3.1-flash-live-preview', 'gemini-2.5-flash-native-audio-preview'],
 };
 
@@ -107,7 +113,7 @@ async function fetchOpenAIRealtimeModels(apiKey, fetchImpl = fetch) {
     const json = await res.json();
     const ids = (json.data || [])
       .map((model) => model.id)
-      .filter((id) => /realtime|audio/i.test(id))
+      .filter((id) => /^gpt-realtime/i.test(id))
       .sort();
     const result = ids.length > 0 ? ids : FALLBACK_MODELS.openaiRealtime;
     setCached(cacheKey, result);
@@ -153,11 +159,59 @@ async function fetchGeminiModels(apiKey, kind, fetchImpl = fetch) {
   }
 }
 
+function isTextModel(provider, model) {
+  const id = (model.id || '').toLowerCase();
+  if (!id) return false;
+  if (provider === 'claude') return true;
+  if (provider === 'mistral') return model.archived !== true && model.capabilities?.completion_chat === true;
+  if (provider === 'groq') return model.active !== false && !/(whisper|tts|guard|moderation|speech)/.test(id);
+  return /^(gpt|o[0-9])/.test(id) && !/(realtime|audio|whisper|tts|transcribe|image|embedding|moderation)/.test(id);
+}
+
+async function fetchTextModels(provider, apiKey, fetchImpl = fetch) {
+  const fallback = TEXT_FALLBACK_MODELS[provider] || [];
+  if (!apiKey) return { models: fallback, source: 'fallback', warning: '尚未設定 API key' };
+  const cacheKey = `text:${provider}:${apiKey.slice(-8)}`;
+  const cached = getCached(cacheKey);
+  if (cached) return { models: cached, source: 'cache' };
+
+  const config = {
+    claude: { url: 'https://api.anthropic.com/v1/models?limit=100', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } },
+    groq: { url: 'https://api.groq.com/openai/v1/models', headers: { Authorization: `Bearer ${apiKey}` } },
+    mistral: { url: 'https://api.mistral.ai/v1/models', headers: { Authorization: `Bearer ${apiKey}` } },
+    openai: { url: 'https://api.openai.com/v1/models', headers: { Authorization: `Bearer ${apiKey}` } },
+  }[provider];
+  if (!config) return { models: fallback, source: 'fallback', warning: '未知文字提供者' };
+
+  try {
+    let url = config.url;
+    let entries = [];
+    let hasMore = false;
+    do {
+      const res = await fetchImpl(url, { headers: config.headers });
+      if (!res.ok) throw new Error(`models list failed: ${res.status}`);
+      const json = await res.json();
+      const page = Array.isArray(json) ? json : (json.data || []);
+      entries = entries.concat(page);
+      hasMore = provider === 'claude' && json.has_more === true && json.last_id;
+      if (hasMore) url = `${config.url}&after_id=${encodeURIComponent(json.last_id)}`;
+    } while (hasMore);
+    const models = entries.filter((model) => isTextModel(provider, model)).map((model) => model.id).sort();
+    const result = models.length ? models : fallback;
+    setCached(cacheKey, result);
+    return { models: result, source: models.length ? 'live' : 'fallback', warning: models.length ? undefined : '帳號沒有可用的文字模型' };
+  } catch (error) {
+    console.warn(`[provider-catalog] ${provider} text model fetch failed, using fallback:`, error.message);
+    return { models: fallback, source: 'fallback', warning: '無法從提供者取得模型清單' };
+  }
+}
+
 module.exports = {
   OPENAI_REALTIME_VOICES,
   GEMINI_LIVE_VOICES,
   FALLBACK_MODELS,
   fetchOpenAIRealtimeModels,
   fetchGeminiModels,
+  fetchTextModels,
   clearCache,
 };

@@ -16,6 +16,7 @@ const {
   FALLBACK_MODELS,
   fetchOpenAIRealtimeModels,
   fetchGeminiModels,
+  fetchTextModels,
   clearCache,
 } = require('../../server/lib/provider-catalog');
 
@@ -47,7 +48,7 @@ test('fetchOpenAIRealtimeModels — no key returns the static fallback', async (
   assert.deepEqual(result, FALLBACK_MODELS.openaiRealtime);
 });
 
-test('fetchOpenAIRealtimeModels — filters live results to realtime/audio models only', async () => {
+test('fetchOpenAIRealtimeModels — filters live results to realtime voice-agent models only', async () => {
   const fakeFetch = async () => jsonResponse({
     data: [
       { id: 'gpt-realtime-2.1' },
@@ -57,7 +58,7 @@ test('fetchOpenAIRealtimeModels — filters live results to realtime/audio model
     ],
   });
   const result = await fetchOpenAIRealtimeModels('sk-test-key', fakeFetch);
-  assert.deepEqual(result.sort(), ['gpt-audio-1.5', 'gpt-realtime-2.1'].sort());
+  assert.deepEqual(result, ['gpt-realtime-2.1']);
 });
 
 test('fetchOpenAIRealtimeModels — falls back to static list on HTTP error', async () => {
@@ -110,6 +111,24 @@ test('fetchGeminiModels — no key returns the appropriate static fallback', asy
   const liveResult = await fetchGeminiModels('', 'live', async () => jsonResponse({ models: [] }));
   assert.deepEqual(textResult, FALLBACK_MODELS.gemini);
   assert.deepEqual(liveResult, FALLBACK_MODELS.geminiLive);
+});
+
+test('FALLBACK_MODELS — excludes the retired Gemini 2.5 text models', () => {
+  assert.equal(FALLBACK_MODELS.gemini.some((model) => model.startsWith('gemini-2.5-')), false);
+  assert.ok(FALLBACK_MODELS.gemini.includes('gemini-3.5-flash'));
+});
+
+test('fetchTextModels — lists account-available Claude, Groq, Mistral, and OpenAI text models', async () => {
+  const fetches = {
+    claude: async () => jsonResponse({ data: [{ id: 'claude-sonnet-test' }], has_more: false }),
+    groq: async () => jsonResponse({ data: [{ id: 'llama-chat', active: true }, { id: 'whisper-large-v3', active: true }] }),
+    mistral: async () => jsonResponse({ data: [{ id: 'mistral-chat', archived: false, capabilities: { completion_chat: true } }, { id: 'mistral-embed', archived: false, capabilities: { completion_chat: false } }] }),
+    openai: async () => jsonResponse({ data: [{ id: 'gpt-4.1-mini' }, { id: 'gpt-realtime-2.1' }, { id: 'whisper-1' }] }),
+  };
+  assert.deepEqual((await fetchTextModels('claude', 'key', fetches.claude)).models, ['claude-sonnet-test']);
+  assert.deepEqual((await fetchTextModels('groq', 'key', fetches.groq)).models, ['llama-chat']);
+  assert.deepEqual((await fetchTextModels('mistral', 'key', fetches.mistral)).models, ['mistral-chat']);
+  assert.deepEqual((await fetchTextModels('openai', 'key', fetches.openai)).models, ['gpt-4.1-mini']);
 });
 
 test('fetchGeminiModels — falls back on error', async () => {

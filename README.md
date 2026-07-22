@@ -144,6 +144,10 @@ providers, the same constraint as a voice change.
 references it only when a conversation naturally touches on those topics, not
 by reciting it unprompted.
 
+### 舞台劇本
+
+Control 的 `舞台劇本` 區塊會使用歌詞改寫的文字模型與演出背景，產生至少 1,000 字的臺灣繁體中文多行對話腳本。角色人數可設為 1–8；啟用 `系統作為角色` 時，系統佔用該人數中的一席。Projection 一次顯示一段多行對話，操作員以 `上一段` / `下一段` 控制閱讀；KTV 開始時會退出劇本並在歌曲結束後回到 AI 畫面。
+
 ### Voice options
 
 Neither provider exposes a live "list voices" API — both catalogs below are

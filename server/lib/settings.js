@@ -21,7 +21,7 @@ const DEFAULT_SETTINGS = {
   },
   models: {
     claude:         'claude-sonnet-4-5',
-    gemini:         'gemini-2.5-flash',
+    gemini:         'gemini-3.5-flash',
     groq:           'llama-3.3-70b-versatile',
     mistral:        'mistral-large-latest',
     openai:         'gpt-4.1-mini',
@@ -43,13 +43,6 @@ const DEFAULT_SETTINGS = {
     // Optional override for the POST /api/ktv/analyze system prompt. Empty
     // string means "use the built-in default prompt" (server/index.js).
     songAnalysisPrompt: '',
-  },
-  yolo: {
-    confidence: 0.45,
-    fpsTarget:  30,
-    // Note: `model` (yolov8n.pt) was intentionally removed — the real YOLO
-    // pipeline (app2-yolo/config.yaml) never read this Node-side copy; it was
-    // dead configuration.
   },
   audio: {
     inputDeviceId: '',
@@ -74,6 +67,7 @@ const DEFAULT_SETTINGS = {
 };
 
 let settingsCache = null;
+const RETIRED_GEMINI_TEXT_MODELS = new Set(['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro']);
 
 /**
  * Deep merge two objects. Mutates target.
@@ -118,6 +112,10 @@ function loadSettings() {
   deepMerge(settingsCache, fileSettings);
 
   if (!loadedFromFile) migrateLegacySettings();
+  const removedLegacyYolo = delete settingsCache.yolo;
+  const migratedGeminiTextModel = RETIRED_GEMINI_TEXT_MODELS.has(settingsCache.models.gemini);
+  if (migratedGeminiTextModel) settingsCache.models.gemini = DEFAULT_SETTINGS.models.gemini;
+  if (removedLegacyYolo || migratedGeminiTextModel) persistSettings();
 
   return settingsCache;
 }
@@ -205,6 +203,10 @@ function updateSettings(patch) {
       }
     }
   }
+  if (patch.yolo) {
+    patch = { ...patch };
+    delete patch.yolo;
+  }
   // Ensure cache is populated, then merge in-place and persist
   loadSettings();
   deepMerge(settingsCache, patch);
@@ -282,7 +284,7 @@ function getModelsForProvider(provider) {
 
   const modelLists = {
     openai:    [base.openaiRealtime, 'gpt-realtime-2.1'],
-    gemini:    [base.gemini, 'gemini-2.5-flash-lite', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3.5-flash'],
+    gemini:    [base.gemini, 'gemini-3.5-flash'],
     claude:    ['claude-sonnet-4-5', 'claude-opus-4', 'claude-haiku-4-5'],
     groq:      ['llama-3.3-70b-versatile', 'llama-4-scout', 'qwen3-32b'],
     mistral:   ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'],

@@ -235,6 +235,16 @@
   .feature-toggle:hover input:checked + .feature-toggle-box { border-color: var(--ok); color: var(--ok); }
   .feature-toggle:hover input:checked + .feature-toggle-box .feature-toggle-detail { color: var(--ok); }
 
+  .script-cast-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .script-cast-input {
+    display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: 11px;
+  }
+  .script-cast-input input {
+    width: 100%; background: transparent; border: 1px solid var(--muted); color: var(--text);
+    font-family: monospace; font-size: 13px; padding: 9px; outline: none;
+  }
+  .script-cast-input input:focus { border-color: var(--accent); }
+
   /* ── Weather widget ── */
   .weather-box {
     background: #000; border: 1px solid var(--border);
@@ -484,7 +494,7 @@
 
   <!-- ── RUNTIME SETTINGS ── -->
   <details class="settings" id="runtime-settings">
-    <summary>系統設定 / Providers, KTV, YOLO</summary>
+    <summary>系統設定 / Providers, KTV</summary>
     <div class="settings-grid">
       <label>Realtime 語音提供者
         <select id="setting-realtime-provider"><option value="openai">OpenAI</option><option value="gemini">Gemini Live</option></select>
@@ -504,16 +514,16 @@
       <label>Gemini 文字模型 <span style="font-size:9px;color:var(--muted)">(即時取得)</span>
         <select id="setting-gemini-model"></select>
       </label>
-      <label>Claude 文字模型
+      <label>Claude 文字模型 <span style="font-size:9px;color:var(--muted)">(帳號即時取得)</span>
         <select id="setting-claude-model"></select>
       </label>
-      <label>Groq 文字模型
+      <label>Groq 文字模型 <span style="font-size:9px;color:var(--muted)">(帳號即時取得)</span>
         <select id="setting-groq-model"></select>
       </label>
-      <label>Mistral 文字模型
+      <label>Mistral 文字模型 <span style="font-size:9px;color:var(--muted)">(帳號即時取得)</span>
         <select id="setting-mistral-model"></select>
       </label>
-      <label>OpenAI 文字模型
+      <label>OpenAI 文字模型 <span style="font-size:9px;color:var(--muted)">(帳號即時取得)</span>
         <select id="setting-openaitext-model"></select>
       </label>
       <label>Gemini Live 聲音
@@ -533,8 +543,6 @@
       <label class="wide">歌曲分析自訂提示 <span style="font-size:9px;color:var(--muted)">（留空則使用內建預設提示）</span>
         <textarea id="setting-song-analysis-prompt" placeholder="（可留空）自訂 AI 分析觀眾點歌傾向時使用的提示"></textarea>
       </label>
-      <label>YOLO 信心閾值<input id="setting-yolo-confidence" type="number" min="0" max="1" step="0.05"></label>
-      <label>YOLO 目標 FPS<input id="setting-yolo-fps" type="number" min="1" max="60" step="1"></label>
       <label class="wide">音訊輸入裝置
         <select id="setting-audio-input" onchange="onAudioDeviceChange()"><option value="">系統預設麥克風</option></select>
       </label>
@@ -550,6 +558,32 @@
     </div>
     <div class="settings-status" id="settings-status">讀取中⋯</div>
   </details>
+
+  <div class="section">
+    <div class="section-title">舞台劇本 / Stage Script</div>
+    <div class="script-cast-controls">
+      <label class="script-cast-input">角色人數（包含系統）
+        <input id="stage-script-actor-count" type="number" min="1" max="8" value="2">
+      </label>
+      <label class="feature-toggle">
+        <input id="stage-script-system-actor" type="checkbox">
+        <span class="feature-toggle-box">系統作為角色<span class="feature-toggle-detail">啟用時，「系統」佔用角色人數中的一席。</span></span>
+      </label>
+    </div>
+    <div class="param">
+      <textarea id="stage-script-prompt" placeholder="（可留空）劇本創作方向，例如：兩位角色在舞台上討論身份、記憶與身體。"></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" type="button" onclick="generateStageScript()">產生約 1000 字劇本</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" type="button" onclick="showStageScript()">顯示劇本</button>
+      <button class="btn" type="button" onclick="navigateStageScript('previous')">上一段</button>
+      <button class="btn" type="button" onclick="navigateStageScript('next')">下一段</button>
+      <button class="btn danger" type="button" onclick="closeStageScript()">關閉劇本</button>
+    </div>
+    <div class="settings-status" id="stage-script-status">產生後會投影多行對話；可用上一段／下一段閱讀。</div>
+  </div>
 
   <!-- ── AI DIALOGUE FEATURE TOGGLES ── -->
   <details class="settings" id="ai-feature-toggles">
@@ -904,6 +938,11 @@ function handleBusMessage(msg) {
     case 'ai.done':
       setAiStateBadge('idle');
       break;
+    case 'ai.error':
+      flushOutputAudio();
+      setAiStateBadge('idle');
+      log('AI 回應錯誤：' + (msg.message || '未知錯誤'));
+      break;
     case 'transcript.user.delta':
       pendingUserTranscript += msg.delta || '';
       break;
@@ -943,8 +982,45 @@ let mediaStream = null;
 let audioWorkletNode = null;
 let providerReady = false;
 let workletChunkCount = 0;
+let desiredSession = false;
+let sessionGeneration = 0;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+const MAX_RECONNECT_ATTEMPTS = 3;
+
+function clearReconnectTimer() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function scheduleReconnect(generation) {
+  if (!desiredSession || generation !== sessionGeneration || reconnectTimer || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
+  const delay = Math.min(750 * (2 ** reconnectAttempts), 3000);
+  reconnectAttempts += 1;
+  log(`Gemini 連線意外中斷，${(delay / 1000).toFixed(2)} 秒後重試（${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}）…`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (desiredSession && generation === sessionGeneration) startSession();
+  }, delay);
+}
+
+function handleRealtimeSocketClose(socket, generation) {
+  if (realtimeWs === socket) realtimeWs = null;
+  state.sessionActive = false;
+  providerReady = false;
+  lastAppliedVoice = null;
+  stopAudioCapture();
+  stopOutputAudio();
+  setAiStateBadge('idle');
+  setMonitorActive(false);
+  if (desiredSession && generation === sessionGeneration) scheduleReconnect(generation);
+}
 
 function startSession() {
+  desiredSession = true;
+  clearReconnectTimer();
+  const generation = ++sessionGeneration;
+  flushOutputAudio();
   // Always stop mic capture immediately
   stopAudioCapture();
   // Create/resume during this click gesture. A context created later in an
@@ -959,6 +1035,10 @@ function startSession() {
     setAudioStatus('要求麥克風權限…');
     navigator.mediaDevices.getUserMedia({ audio: audioInputConstraints(), video: false })
       .then(async (stream) => {
+        if (!desiredSession || generation !== sessionGeneration) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         mediaStream = stream;
         await refreshAudioDevices();
         // Start metering immediately. Provider forwarding is gated separately.
@@ -968,12 +1048,17 @@ function startSession() {
         });
 
         const wsUrl = `ws://${location.host}/ws/realtime`;
-        realtimeWs = new WebSocket(wsUrl);
+        const socket = new WebSocket(wsUrl);
+        realtimeWs = socket;
 
-        realtimeWs.onopen = () => {
+        socket.onopen = () => {
+          if (!desiredSession || generation !== sessionGeneration) {
+            socket.close();
+            return;
+          }
           log('Realtime WS 已連線，啟動 session');
           lastAppliedVoice = currentVoiceForProvider();
-          realtimeWs.send(JSON.stringify({
+          socket.send(JSON.stringify({
             type: 'session.start',
             config: buildSessionPayload(),
           }));
@@ -981,7 +1066,7 @@ function startSession() {
           providerReady = false;
         };
 
-        realtimeWs.onmessage = (e) => {
+        socket.onmessage = (e) => {
           let msg;
           try { msg = JSON.parse(e.data); } catch { return; }
           switch (msg.type) {
@@ -1005,16 +1090,21 @@ function startSession() {
               log('session 已建立');
               setRealtimeBadge('active', '◉ 通話中');
               pushMonitorParams();
+              reconnectAttempts = 0;
               break;
             case 'proxy.disconnected':
               log(`${msg.provider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'} 斷線`);
               setRealtimeBadge('error', 'AI 斷線');
               stopAudioCapture();
+              flushOutputAudio();
               setAiStateBadge('idle');
+              if (desiredSession && generation === sessionGeneration) socket.close();
               break;
             case 'proxy.error':
               log('錯誤：' + msg.message);
               setRealtimeBadge('error', '錯誤');
+              flushOutputAudio();
+              if (desiredSession && generation === sessionGeneration) socket.close();
               break;
             case 'error':
               log('Realtime 錯誤：' + (msg.error?.message || JSON.stringify(msg.error)));
@@ -1049,14 +1139,9 @@ function startSession() {
           }
         };
 
-        realtimeWs.onclose = () => {
+        socket.onclose = () => {
           log('Realtime WS 關閉');
-          state.sessionActive = false;
-          lastAppliedVoice = null;
-          stopAudioCapture();
-          stopOutputAudio();
-          setAiStateBadge('idle');
-          setMonitorActive(false);
+          handleRealtimeSocketClose(socket, generation);
         };
       })
       .catch((err) => {
@@ -1068,8 +1153,12 @@ function startSession() {
   // Wait for old socket to fully close before opening a new one
   if (realtimeWs && realtimeWs.readyState !== WebSocket.CLOSED) {
     log('關閉舊 session…');
-    realtimeWs.onclose = () => { realtimeWs = null; doConnect(); };
-    realtimeWs.close();
+    const oldSocket = realtimeWs;
+    oldSocket.onclose = () => {
+      if (realtimeWs === oldSocket) realtimeWs = null;
+      if (desiredSession && generation === sessionGeneration) doConnect();
+    };
+    oldSocket.close();
   } else {
     realtimeWs = null;
     providerReady = false;
@@ -1253,6 +1342,9 @@ function cancelResponse() {
 }
 
 function closeSession() {
+  desiredSession = false;
+  sessionGeneration += 1;
+  clearReconnectTimer();
   if (realtimeWs) realtimeWs.close();
   stopAudioCapture();
   stopOutputAudio();
@@ -1918,6 +2010,79 @@ function log(msg) {
   el.innerHTML = `<div>${ts} ${msg}</div>` + el.innerHTML;
 }
 
+function lyricsGenerationSelection() {
+  const provider = state.settings?.providers?.lyricsRewrite || 'gemini';
+  return { provider, model: state.settings?.models?.[provider] || '未選擇模型' };
+}
+
+// ── Stage script ──────────────────────────────────────────────────────────────
+async function generateStageScript() {
+  const btn = document.querySelector('[onclick="generateStageScript()"]');
+  const status = document.getElementById('stage-script-status');
+  btn.disabled = true;
+  btn.textContent = '劇本生成中⋯';
+  const selection = lyricsGenerationSelection();
+  status.textContent = `正在使用 ${selection.provider} / ${selection.model} 產生劇本⋯`;
+  try {
+    const res = await fetch('/api/stage-script/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: document.getElementById('stage-script-prompt').value.trim(),
+        actorCount: Number(document.getElementById('stage-script-actor-count').value),
+        systemIsActor: document.getElementById('stage-script-system-actor').checked,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || '劇本生成失敗');
+    status.textContent = `✓ 劇本已產生（${json.characterCount} 字，${json.pageCount} 段，${json.provider} / ${json.model}）；按「顯示劇本」投影。`;
+    status.style.color = 'var(--ok)';
+    log('舞台劇本已產生並投影');
+  } catch (error) {
+    status.textContent = '✗ 劇本生成失敗：' + error.message;
+    status.style.color = 'var(--active)';
+    log('劇本生成失敗：' + error.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '產生約 1000 字劇本';
+  }
+}
+
+async function navigateStageScript(action) {
+  const status = document.getElementById('stage-script-status');
+  try {
+    const res = await fetch('/api/stage-script/navigate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || '劇本換頁失敗');
+    status.textContent = `劇本第 ${json.page + 1} / ${json.pageCount} 段`;
+    status.style.color = 'var(--text)';
+  } catch (error) {
+    status.textContent = '✗ ' + error.message;
+    status.style.color = 'var(--active)';
+  }
+}
+
+async function showStageScript() {
+  const status = document.getElementById('stage-script-status');
+  try {
+    const res = await fetch('/api/stage-script/show', { method: 'POST' });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || '顯示劇本失敗');
+    status.textContent = `✓ 顯示劇本，第 ${json.page + 1} / ${json.pageCount} 段`;
+    status.style.color = 'var(--ok)';
+  } catch (error) {
+    status.textContent = '✗ ' + error.message;
+    status.style.color = 'var(--active)';
+  }
+}
+
+async function closeStageScript() {
+  await fetch('/api/stage-script/close', { method: 'POST' });
+  document.getElementById('stage-script-status').textContent = '劇本已關閉，Projection 回到 AI 畫面。';
+  document.getElementById('stage-script-status').style.color = 'var(--muted)';
+}
+
 // ── Lyrics editor ─────────────────────────────────────────────────────────────
 let lyricsCurrentSong = null;
 let lyricsCurrentVariant = 'original';
@@ -1968,6 +2133,7 @@ async function refreshVariantButtons(songId) {
     const v = btn.dataset.variant;
     btn.style.opacity = available.includes(v) ? '1' : '0.35';
   });
+  if (json.activeVariant && available.includes(json.activeVariant)) selectVariant(json.activeVariant);
 }
 
 function selectVariant(variant) {
@@ -2002,8 +2168,9 @@ async function generateVariant() {
     ? 'gender-swap'
     : lyricsCurrentVariant;
   const customPrompt = document.getElementById('lyrics-custom-prompt').value.trim();
+  const selection = lyricsGenerationSelection();
   log(`生成中：${variant}⋯`);
-  setLyricsStatus('LLM 生成中⋯', 'pending');
+  setLyricsStatus(`LLM 生成中（${selection.provider} / ${selection.model}）⋯`, 'pending');
   btn.disabled = true;
   btn.textContent = '生成中⋯';
   try {
@@ -2015,8 +2182,8 @@ async function generateVariant() {
     const json = await res.json();
     if (json.error) throw new Error(json.error);
     document.getElementById('lyrics-editor').value = json.lrcText;
-    setLyricsStatus(`✓ 已生成「${variant}」並推送到投影`, 'ok');
-    selectVariant('live');
+    setLyricsStatus(`✓ 已生成「${json.variant}」(${json.lineCount} 行，${json.provider} / ${json.model})`, 'ok');
+    selectVariant(json.variant);
     await refreshVariantButtons(lyricsCurrentSong);
     log(`歌詞生成完成：${variant}`);
   } catch (e) {
@@ -2056,11 +2223,13 @@ async function pushLyricsOverride() {
 async function clearLyricsOverride() {
   if (!lyricsCurrentSong) return;
   const btn = document.querySelector('[onclick="clearLyricsOverride()"]');
-  await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/override`, { method: 'DELETE' });
-  setLyricsStatus('✓ 覆蓋已清除，還原原版', 'ok');
+  const res = await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/override`, { method: 'DELETE' });
+  const json = await res.json();
+  if (!res.ok || json.error) { setLyricsStatus('✗ 清除覆蓋失敗：' + (json.error || '未知錯誤'), 'error'); return; }
+  setLyricsStatus(`✓ 覆蓋已清除，切換至「${json.variant}」`, 'ok');
   log('歌詞覆蓋已清除');
   flashButton(btn, '✓ 已清除');
-  selectVariant('original');
+  selectVariant(json.variant);
   await loadVariantIntoEditor();
 }
 
@@ -2090,11 +2259,17 @@ async function populateModelSelect(id, endpoint, currentValue) {
   if (!select) return;
   try {
     const res = await fetch(endpoint);
-    const list = res.ok ? await res.json() : [];
-    const ids = Array.isArray(list) ? list.map((item) => (typeof item === 'string' ? item : item.id)) : [];
-    if (currentValue && !ids.includes(currentValue)) ids.unshift(currentValue);
-    select.replaceChildren(...ids.map((modelId) => new Option(modelId, modelId)));
+    const payload = res.ok ? await res.json() : { models: [], source: 'fallback', warning: '模型清單請求失敗' };
+    const list = Array.isArray(payload) ? payload : (payload.models || []);
+    const ids = list.map((item) => (typeof item === 'string' ? item : item.id));
+    const currentUnavailable = currentValue && !ids.includes(currentValue);
+    if (currentUnavailable) ids.unshift(currentValue);
+    select.replaceChildren(...ids.map((modelId) => new Option(
+      modelId === currentValue && currentUnavailable ? `${modelId}（目前帳號不可用）` : modelId,
+      modelId,
+    )));
     if (currentValue) select.value = currentValue;
+    select.title = payload.warning || `模型清單來源：${payload.source || 'live'}`;
   } catch (error) {
     console.warn(`[settings] Could not load model list for ${id}:`, error.message);
     select.replaceChildren(...(currentValue ? [new Option(currentValue, currentValue)] : []));
@@ -2136,8 +2311,6 @@ async function loadSettings() {
     setSettingValue('setting-ktv-variant', settings.ktv.defaultVariant);
     setSettingValue('setting-ktv-auto', String(settings.ktv.autoRewrite));
     setSettingValue('setting-song-analysis-prompt', settings.ktv.songAnalysisPrompt || '');
-    setSettingValue('setting-yolo-confidence', settings.yolo.confidence);
-    setSettingValue('setting-yolo-fps', settings.yolo.fpsTarget);
     document.getElementById('setting-voice-length-control').checked = !!settings.aiFeatures?.voiceLengthControl;
     document.getElementById('setting-voice-song-import').checked = !!settings.aiFeatures?.voiceSongImport;
     await Promise.all([
@@ -2186,10 +2359,6 @@ async function saveSettings() {
       defaultVariant: getSettingValue('setting-ktv-variant'),
       autoRewrite: getSettingValue('setting-ktv-auto') === 'true',
       songAnalysisPrompt: getSettingValue('setting-song-analysis-prompt').trim(),
-    },
-    yolo: {
-      confidence: Number(getSettingValue('setting-yolo-confidence')),
-      fpsTarget: Number(getSettingValue('setting-yolo-fps')),
     },
     audio: {
       inputDeviceId: getSettingValue('setting-audio-input'),
@@ -2427,6 +2596,7 @@ let outputNextTime  = 0;   // AudioContext time when next chunk should start
 let outputSinkId    = null;
 let activeOutputSources = []; // scheduled/playing AudioBufferSourceNodes, for interrupt flushing
 const OUTPUT_SAMPLE_RATE = 24000; // both OpenAI and Gemini output 24kHz PCM16
+const MAX_OUTPUT_BACKLOG_SECONDS = 1;
 
 function setAudioStatus(text, isError = false) {
   const el = document.getElementById('audio-status');
@@ -2478,6 +2648,12 @@ function playOutputAudio(base64Pcm16) {
     }
 
     if (float32.length === 0) return;
+
+    const queuedSeconds = Math.max(0, outputNextTime - ctx.currentTime);
+    if (queuedSeconds > MAX_OUTPUT_BACKLOG_SECONDS) {
+      console.warn(`[audio] output backlog ${queuedSeconds.toFixed(2)}s; flushing stale audio`);
+      flushOutputAudio();
+    }
 
     // Create AudioBuffer and schedule it
     const buffer = ctx.createBuffer(1, float32.length, OUTPUT_SAMPLE_RATE);

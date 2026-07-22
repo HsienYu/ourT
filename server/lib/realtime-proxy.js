@@ -125,6 +125,10 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
       broadcast.toAll({ type: 'ai.thinking' });
     } else if (message.type === 'response.done') {
       openaiResponding = false;
+      const status = message.response?.status;
+      if (status && status !== 'completed') {
+        broadcast.toAll({ type: 'ai.error', message: `OpenAI 回應未完成：${status}` });
+      }
       broadcast.toAll({ type: 'ai.done' });
     } else if (message.type === 'response.cancelled') {
       // Authoritative confirmation that OpenAI cancelled the in-flight response
@@ -147,7 +151,9 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
       broadcast.toAll({ type: 'vad.speech_stopped' });
     } else if (message.type === 'error') {
       console.error('[realtime-proxy] OpenAI error detail:', JSON.stringify(message.error));
+      openaiResponding = false;
       broadcast.toAll({ type: 'ai.error', message: message.error?.message || 'unknown error' });
+      broadcast.toAll({ type: 'ai.done' });
     } else if (message.type === 'response.function_call_arguments.done') {
       handleOpenAIToolCall(message);
     }
@@ -405,6 +411,7 @@ function handleRealtimeClient(clientWs, broadcast, apiKeys) {
 
   function attachProviderHandlers(ws, provider) {
     ws.on('message', (raw) => {
+      if (providerWs !== ws) return;
       let message;
       try {
         message = JSON.parse(raw.toString());

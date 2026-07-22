@@ -75,6 +75,13 @@ npm test
   the per-server-run cap on voice-triggered song imports (default 5), so a
   repeated voice request can't spend unlimited yt-dlp/Whisper time during a
   live show. Module-level counter, reset via `resetGuard()` between tests.
+- `reconnect-retry.test.js` — covers bounded retries for an unexpected current
+  Gemini disconnect, while excluding stale, manually stopped, and exhausted
+  sessions.
+- `lyrics-variant.test.js` — covers generated-lyrics validation and effective
+  variant precedence: live override, persisted generated variant, then original.
+- `stage-script.test.js` — covers zh-TW script line wrapping, page boundaries,
+  and previous/next navigation clamping for Projection reading mode.
 
 ## What's intentionally NOT covered here
 

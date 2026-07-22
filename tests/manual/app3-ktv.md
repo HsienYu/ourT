@@ -73,10 +73,15 @@ Record results and evidence in the Evidence column.
 |---|---|---|
 | Open Lyrics Editor in operator panel | Song selector populated | |
 | Select a song | Variant buttons show which variants exist | |
-| Tap LLM 即時生成 (gender-swap) | Status shows 生成中… then 已生成：gender-swap 已推送到投影 | |
+| Tap LLM 即時生成 (gender-swap) | Status shows generated variant, LRC line count, and actual provider/model | |
 | If song is currently playing | Lyrics hot-swap on projection without audio interruption | |
 | Wipe colour changes | gender-swap → cool blue (rather than default pink) | |
-| Tap 清除覆蓋 | Lyrics revert to original | |
+| Generate before playback, then play the song | Generated version loads rather than original lyrics | |
+| Reload Projection after generation | Generated version remains active | |
+| Restart Server, then replay | Generated version remains selected from the catalog | |
+| Enter an additional custom instruction, then generate | Result reflects the built-in variant plus the custom instruction | |
+| Make the provider return malformed/non-LRC content | Control reports a validation error; currently displayed lyrics remain unchanged | |
+| Tap 清除覆蓋 | Ephemeral manual override clears and returns to the persisted generated version (or original if none exists) | |
 
 ---
 

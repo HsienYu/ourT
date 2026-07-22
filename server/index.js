@@ -56,12 +56,15 @@ const providerCatalog = require('./lib/provider-catalog');
 const youtubeSearch = require('./lib/youtube-search');
 const songImporter = require('./lib/song-importer');
 const { getSongsDir } = require('./lib/song-storage');
+const { effectiveLyricsVariant, validateRewriteLrc } = require('./lib/lyrics-variant');
+const { paginateStageScript, navigateStageScript, validateStageScriptConfig, buildStageScriptPayload, setStageScriptVisibility } = require('./lib/stage-script');
 
 const PORT = process.env.PORT || 3000;
 const SONGS_DIR = getSongsDir();
 const LYRICS_DIR = path.join(SONGS_DIR, 'lyrics');
 const AUDIO_DIR = path.join(SONGS_DIR, 'audio');
 const COVERS_DIR = path.join(SONGS_DIR, 'covers');
+let stageScriptState = { text: '', page: 0, visible: false, actorCount: 2, systemIsActor: false };
 
 // ── Express app ─────────────────────────────────────────────────────────────
 const app = express();
@@ -112,6 +115,8 @@ app.post('/api/queue/play', (req, res) => {
   if (songQueue.getQueue().nowPlaying) {
     return res.status(409).json({ ok: false, error: '已有歌曲正在播放，請使用切歌或等待歌曲結束' });
   }
+  stageScriptState = { ...stageScriptState, visible: false };
+  broadcast.toProjection({ type: 'stage_script.hide' });
   const item = songQueue.dequeue();
   if (!item) return res.status(400).json({ ok: false, error: '佇列為空' });
   // projectionConnected is informational — the client shows a warning if false,
@@ -156,12 +161,7 @@ app.get('/api/songs/:id/lyrics', (req, res) => {
   const lrcPath = path.join(LYRICS_DIR, lrcFile);
 
   res.sendFile(lrcPath, (err) => {
-    if (err) {
-      const fallback = path.join(LYRICS_DIR, `${songId}.lrc`);
-      res.sendFile(fallback, (err2) => {
-        if (err2) res.status(404).json({ error: 'lyrics not found' });
-      });
-    }
+    if (err && !res.headersSent) res.status(404).json({ error: `lyrics variant not found: ${variant}` });
   });
 });
 
@@ -181,7 +181,8 @@ app.get('/api/songs/:id/lyrics/variants', (req, res) => {
   const override = lyricsOverrides.get(songId);
   if (override) available.push('live');
 
-  res.json({ songId, variants: available });
+  const song = songQueue.getCatalog().find((entry) => entry.id === songId);
+  res.json({ songId, variants: available, activeVariant: effectiveLyricsVariant(song || {}, !!override) });
 });
 
 // POST /api/songs/:id/lyrics/override — live override (operator edits mid-show)
@@ -200,8 +201,10 @@ app.post('/api/songs/:id/lyrics/override', (req, res) => {
 
 app.delete('/api/songs/:id/lyrics/override', (req, res) => {
   lyricsOverrides.delete(req.params.id);
-  broadcast.toProjection({ type: 'ktv.lyrics.override.cleared', songId: req.params.id });
-  res.json({ ok: true });
+  const song = songQueue.getCatalog().find((entry) => entry.id === req.params.id);
+  const variant = effectiveLyricsVariant(song || {}, false);
+  broadcast.toProjection({ type: 'ktv.lyrics.override.cleared', songId: req.params.id, variant });
+  res.json({ ok: true, variant });
 });
 
 // ── RAG context loader ────────────────────────────────────────────────────────
@@ -225,6 +228,72 @@ app.get('/api/rag/context', (req, res) => {
   res.type('text/plain').send(loadRagContext());
 });
 
+function stageScriptPayload() {
+  return { type: 'stage_script.state', ...buildStageScriptPayload(stageScriptState), actorCount: stageScriptState.actorCount, systemIsActor: stageScriptState.systemIsActor };
+}
+
+app.post('/api/stage-script/generate', async (req, res) => {
+  const direction = typeof req.body.prompt === 'string' ? req.body.prompt.trim().slice(0, 1200) : '';
+  let cast;
+  try {
+    cast = validateStageScriptConfig(req.body);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const ragContext = loadRagContext();
+  const roleRule = cast.systemIsActor
+    ? `角色總數為 ${cast.actorCount} 人，必須包含「系統」與另外 ${cast.humanActorCount} 位具名角色。`
+    : `角色總數為 ${cast.actorCount} 人，使用 ${cast.actorCount} 位具名角色；「系統」不可說話。`;
+  const system = `${ragContext ? `【演出概念背景】\n${ragContext}\n\n` : ''}你是一位臺灣當代劇場編劇。寫一段至少 1000 個可見中文字的舞台劇腳本。${roleRule} 使用角色名稱加冒號的多行對話，穿插簡短的【舞台指示】。保持可投影閱讀的短行，避免 Markdown、標題、說明或任何前言。`;
+  try {
+    const result = await aiProviders.generateText({
+      task: 'lyricsRewrite',
+      system,
+      prompt: direction || '請依照演出概念創作一段可供現場演員朗讀的舞台劇對話。',
+      options: { maxTokens: 3000 },
+    });
+    let text = result.text.trim();
+    if (Array.from(text.replace(/\s/g, '')).length < 1000) {
+      const continuation = await aiProviders.generateText({
+        task: 'lyricsRewrite', system,
+        prompt: `請接續下列劇本，只輸出新的後續對話，直到合併後至少有 1000 個可見中文字。\n\n${text}`,
+        options: { maxTokens: 3000 },
+      });
+      text = `${text}\n${continuation.text.trim()}`;
+    }
+    const characterCount = Array.from(text.replace(/\s/g, '')).length;
+    if (characterCount < 1000) throw new Error(`劇本長度不足（${characterCount} 字），請重新產生`);
+    stageScriptState = { text, page: 0, visible: false, ...cast };
+    res.json({ ok: true, ...stageScriptPayload(), characterCount, provider: result.provider, model: result.model });
+  } catch (err) {
+    console.error('[stage-script] generation failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/stage-script/navigate', (req, res) => {
+  if (!stageScriptState.text) return res.status(400).json({ error: '尚未產生舞台劇本' });
+  const action = req.body.action;
+  if (!['previous', 'next'].includes(action)) return res.status(400).json({ error: 'invalid navigation action' });
+  const pageCount = paginateStageScript(stageScriptState.text).length;
+  stageScriptState = { ...stageScriptState, page: navigateStageScript(stageScriptState.page, pageCount, action) };
+  if (stageScriptState.visible) broadcast.toProjection(stageScriptPayload());
+  res.json({ ok: true, ...stageScriptPayload() });
+});
+
+app.post('/api/stage-script/show', (req, res) => {
+  if (!stageScriptState.text) return res.status(400).json({ error: '尚未產生舞台劇本' });
+  stageScriptState = setStageScriptVisibility(stageScriptState, true);
+  broadcast.toProjection(stageScriptPayload());
+  res.json({ ok: true, ...stageScriptPayload() });
+});
+
+app.post('/api/stage-script/close', (req, res) => {
+  stageScriptState = setStageScriptVisibility(stageScriptState, false);
+  broadcast.toProjection({ type: 'stage_script.hide' });
+  res.json({ ok: true });
+});
+
 // ── Shared LLM lyrics generation (uses ai-providers abstraction) ──────────────
 const VARIANT_PROMPTS = {
   'gender-swap': `你是一位繁體中文歌詞改編者。根據演出概念背景，將歌詞中的性別詞語進行流動性互換（他↔她↔TA、男↔女、哥↔姐等）。保持 LRC 時間戳記格式和音節數不變（±2字）。只輸出 LRC 內容，不要任何說明。`,
@@ -245,31 +314,36 @@ async function generateLyricsLLM(songId, variant, customPrompt) {
   }
 
   const ragContext = loadRagContext();
+  const variantPrompt = VARIANT_PROMPTS[variant];
+  if (!variantPrompt) throw new Error(`unsupported lyrics variant: ${variant}`);
+  const customRule = customPrompt ? `\n\n額外改寫指令：${customPrompt}` : '';
   const systemPrompt = ragContext
-    ? `【演出概念背景】\n${ragContext}\n\n${VARIANT_PROMPTS[variant] || customPrompt || '請依照演出概念背景改寫以下歌詞。保持 LRC 時間戳記格式不變。只輸出 LRC 內容。'}`
-    : (VARIANT_PROMPTS[variant] || customPrompt || '請依照演出概念背景改寫以下歌詞。保持 LRC 時間戳記格式不變。只輸出 LRC 內容。');
+    ? `【演出概念背景】\n${ragContext}\n\n${variantPrompt}${customRule}`
+    : `${variantPrompt}${customRule}`;
 
-  const { text } = await aiProviders.generateText({
+  const result = await aiProviders.generateText({
     task: 'lyricsRewrite',
     system: systemPrompt,
     prompt: `歌曲：《${song.title}》 ${song.artist}\n\n${originalLrc}`,
     options: { maxTokens: 2048 },
   });
+  const parsedLines = validateRewriteLrc(originalLrc, result.text);
 
   // Save to file and set as live override
   const outPath = path.join(LYRICS_DIR, `${songId}.${variant}.lrc`);
-  fs.writeFileSync(outPath, text, 'utf8');
-  lyricsOverrides.set(songId, { lrcText: text, variant });
+  fs.writeFileSync(outPath, result.text, 'utf8');
+  lyricsOverrides.delete(songId);
+  const updatedSong = songQueue.updateSongLyricsVariant(songId, variant);
 
   broadcast.toProjection({
     type: 'ktv.lyrics.override',
     songId,
-    lrcText: text,
+    lrcText: result.text,
     variant,
   });
 
   console.log(`[lyrics] Generated variant '${variant}' for song '${songId}'`);
-  return { text, variant };
+  return { text: result.text, variant, song: updatedSong, provider: result.provider, model: result.model, lineCount: parsedLines.length };
 }
 
 // POST /api/songs/:id/lyrics/generate — trigger live LLM rewrite
@@ -277,8 +351,8 @@ app.post('/api/songs/:id/lyrics/generate', async (req, res) => {
   const variant = req.body.variant || 'gender-swap';
   const customPrompt = req.body.customPrompt;
   try {
-    const { text } = await generateLyricsLLM(req.params.id, variant, customPrompt);
-    res.json({ ok: true, variant, lrcText: text });
+    const result = await generateLyricsLLM(req.params.id, variant, customPrompt);
+    res.json({ ok: true, lrcText: result.text, variant: result.variant, provider: result.provider, model: result.model, lineCount: result.lineCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -409,6 +483,7 @@ app.get('/api/settings', (req, res) => {
 app.post('/api/settings', (req, res) => {
   try {
     const updated = settingsLib.updateSettings(req.body);
+    providerCatalog.clearCache();
     res.json({ settings: settingsLib.getSettings(true), updated: !!updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -419,27 +494,28 @@ app.get('/api/settings/providers', (req, res) => {
   res.json(settingsLib.getProviderOptions());
 });
 
-// Model lists: OpenAI and Gemini are fetched live from each provider's own
-// models.list endpoint (cached briefly, with a static fallback on failure —
-// see lib/provider-catalog.js). Other text-generation providers stay static.
+// Account-visible model lists are fetched from each provider with a safe
+// fallback when no key, a provider outage, or an account restriction occurs.
 app.get('/api/settings/models', async (req, res) => {
   const provider = req.query.provider;
   if (!provider) return res.status(400).json({ error: 'provider query required' });
   const settings = settingsLib.getSettings(false);
   try {
     if (provider === 'openai') {
-      return res.json(await providerCatalog.fetchOpenAIRealtimeModels(settings.keys.openai));
+      return res.json({ models: await providerCatalog.fetchOpenAIRealtimeModels(settings.keys.openai), source: 'live' });
     }
     if (provider === 'gemini') {
-      return res.json(await providerCatalog.fetchGeminiModels(settings.keys.gemini, 'text'));
+      return res.json({ models: await providerCatalog.fetchGeminiModels(settings.keys.gemini, 'text'), source: 'live' });
     }
     if (provider === 'geminiLive') {
-      return res.json(await providerCatalog.fetchGeminiModels(settings.keys.gemini, 'live'));
+      return res.json({ models: await providerCatalog.fetchGeminiModels(settings.keys.gemini, 'live'), source: 'live' });
     }
-    res.json(settingsLib.getModelsForProvider(provider));
+    const textProvider = provider === 'openaiText' ? 'openai' : provider;
+    const keyName = textProvider === 'claude' ? 'anthropic' : textProvider;
+    return res.json(await providerCatalog.fetchTextModels(textProvider, settings.keys[keyName]));
   } catch (err) {
     console.error('[settings/models] fetch failed:', err.message);
-    res.json(settingsLib.getModelsForProvider(provider));
+    res.json({ models: settingsLib.getModelsForProvider(provider), source: 'fallback', warning: '無法取得即時模型清單' });
   }
 });
 
@@ -541,6 +617,9 @@ wssBus.on('connection', (ws, req) => {
   if (role === 'projection' && songQueue.getQueue().nowPlaying) {
     ws.send(JSON.stringify({ type: 'ktv.play', item: songQueue.getQueue().nowPlaying }));
   }
+  if (role === 'projection' && stageScriptState.visible && !songQueue.getQueue().nowPlaying) {
+    ws.send(JSON.stringify(stageScriptPayload()));
+  }
   // Notify all operator panels when projection comes online.
   if (role === 'projection') {
     broadcast.toControl({ type: 'projection.status', connected: true });
@@ -593,11 +672,6 @@ wssBus.on('connection', (ws, req) => {
     // KTV lyric style toggle (wipe / line) — projection listens
     if (msg.type === 'projection.lyric_style') {
       broadcast.toProjection({ type: 'projection.lyric_style', style: msg.style });
-    }
-
-    // KTV lyric variant change (operator selects different LLM variant)
-    if (msg.type === 'projection.lyric_variant') {
-      broadcast.toProjection({ type: 'projection.lyric_variant', variant: msg.variant });
     }
 
     // Operator changes realtime voice provider

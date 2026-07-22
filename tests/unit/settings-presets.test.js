@@ -14,15 +14,29 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-function freshSettingsModule() {
+function freshSettingsModule(initialSettings) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ourt-settings-test-'));
-  process.env.OURT_SETTINGS_PATH = path.join(dir, 'settings.json');
+  const settingsPath = path.join(dir, 'settings.json');
+  if (initialSettings) fs.writeFileSync(settingsPath, JSON.stringify(initialSettings), 'utf8');
+  process.env.OURT_SETTINGS_PATH = settingsPath;
   delete process.env.OURT_LEGACY_SETTINGS_PATH;
   delete process.env.OURT_LEGACY_ENV_PATH;
   const modulePath = require.resolve('../../server/lib/settings');
   delete require.cache[modulePath];
   return require(modulePath);
 }
+
+test('settings — removes legacy unused Node YOLO fields and ignores future YOLO patches', () => {
+  const settings = freshSettingsModule({ yolo: { confidence: 0.1, fpsTarget: 5 } });
+  assert.equal('yolo' in settings.getSettings(), false);
+  settings.updateSettings({ yolo: { confidence: 0.9 } });
+  assert.equal('yolo' in settings.getSettings(), false);
+});
+
+test('settings — migrates retired Gemini text model to the current default', () => {
+  const settings = freshSettingsModule({ models: { gemini: 'gemini-2.5-flash' } });
+  assert.equal(settings.getSettings().models.gemini, 'gemini-3.5-flash');
+});
 
 test('getPresets — empty by default', () => {
   const settings = freshSettingsModule();
