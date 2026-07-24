@@ -65,7 +65,10 @@ npm test
     WebSocket that isn't `OPEN` (guards against sending to a `CLOSING` socket).
   - **14.6** — a manual `開始/連線` click must reset the reconnect-attempt
     counter to zero, or a session that already exhausted its automatic retry
-    budget can never successfully reconnect again until the app restarts.
+   budget can never successfully reconnect again until the app restarts.
+- `audio-output.test.js` — covers the 10-second AI output-backlog circuit
+  breaker and RMS calculation from already-decoded PCM16 samples. Browser Web
+  Audio scheduling remains covered by the realtime manual protocol.
 
 ## What's intentionally NOT covered here
 

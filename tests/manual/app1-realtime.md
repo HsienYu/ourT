@@ -67,7 +67,9 @@ live provider connection, real audio hardware, or the actual Electron app.
 | | AI voice heard through speaker | |
 | AI finishes | Monitor: `完成` (green, fades after 2s) | |
 | | Projection: cursor returns to slow blink | |
-| During a long response, change Gemini settings or interrupt AI | No old audio resumes after reconnect/interrupt; Control log has no backlog warning above 1 second | |
+| During a long response, change Gemini settings or interrupt AI | No old audio resumes after reconnect/interrupt; ordinary 1–3 second provider lookahead continues uninterrupted | |
+| Sustain AI speech for at least 30 seconds | Speech remains continuous without stutter/cut-offs; Control does not report the 10-second backlog circuit breaker | |
+| Simulate or observe a runaway output queue | Control status and log visibly report that the 10-second backlog circuit breaker cleared queued audio | |
 | Force provider/network interruption during a response | Control, Monitor, and Projection leave the speaking state; queued audio stops | |
 
 ---
