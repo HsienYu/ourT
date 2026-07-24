@@ -160,13 +160,14 @@
   .state-btn.selected { border-color: var(--accent); color: var(--accent); background: rgba(224,208,255,0.06); }
 
   /* ── Attitude switch ── */
-  .attitude-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .attitude-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .att-btn {
     padding: 10px; border: 1px solid var(--border);
     background: transparent; color: var(--muted);
     font-family: monospace; font-size: 10px; cursor: pointer;
     text-align: center; text-transform: uppercase; letter-spacing: 1px; transition: all 0.15s;
   }
+  .att-btn.normal.selected   { border-color: var(--text);    color: var(--text);    background: rgba(221,221,221,0.07); }
   .att-btn.passive.selected  { border-color: var(--passive); color: var(--passive); background: rgba(128,128,255,0.07); }
   .att-btn.resistant.selected{ border-color: var(--active);  color: var(--active);  background: rgba(255,96,128,0.07);  }
 
@@ -327,7 +328,8 @@
     <div class="param">
       <div class="param-label">姿態 <span>Attitude</span></div>
       <div class="attitude-row">
-        <button class="att-btn passive selected" id="att-passive" onclick="setAttitude('passive')">被動承受<br><span style="font-size:9px">Passive</span></button>
+        <button class="att-btn normal selected" id="att-normal" onclick="setAttitude('normal')">正常<br><span style="font-size:9px">Normal</span></button>
+        <button class="att-btn passive" id="att-passive" onclick="setAttitude('passive')">被動承受<br><span style="font-size:9px">Passive</span></button>
         <button class="att-btn resistant" id="att-resistant" onclick="setAttitude('resistant')">主動反抗<br><span style="font-size:9px">Resistant</span></button>
       </div>
     </div>
@@ -544,7 +546,7 @@ function modalResolveAction(accepted) {
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
   voice: 'marin', // OpenAI's recommended best-quality Realtime voice
-  attitude: 'passive',
+  attitude: 'normal',
   emotionalState: 'normal',
   params: { doubt: 5, gender: 5, pressure: 5, label: 5, energy: 5 },
   sessionActive: false,
@@ -1114,7 +1116,9 @@ function buildInstructions() {
 
   const attitudeSection = state.attitude === 'passive'
     ? '你承受著被定義的過程。你不反抗，但你感受到它。你的回應傾向於探索、反思。'
-    : '你拒絕被放進格子裡。你質疑每一個試圖定義你的問題。你反問，你揭露提問本身的前提。';
+    : state.attitude === 'resistant'
+      ? '你拒絕被放進格子裡。你質疑每一個試圖定義你的問題。你反問，你揭露提問本身的前提。'
+      : '你保持平穩、自然且清晰的對話，不刻意承受或反抗被定義的過程。';
 
   const stateLabels = {
     confused: '困惑——我是什麼？',
@@ -1196,6 +1200,7 @@ function selectVoice(v) {
 
 function setAttitude(a) {
   state.attitude = a;
+  document.getElementById('att-normal').classList.toggle('selected', a === 'normal');
   document.getElementById('att-passive').classList.toggle('selected', a === 'passive');
   document.getElementById('att-resistant').classList.toggle('selected', a === 'resistant');
   scheduleLiveUpdate();
@@ -1238,6 +1243,7 @@ function applyCharacterState(preset) {
   if (preset.voice) selectVoiceSilent(preset.voice);
   if (preset.attitude) {
     state.attitude = preset.attitude;
+    document.getElementById('att-normal').classList.toggle('selected', preset.attitude === 'normal');
     document.getElementById('att-passive').classList.toggle('selected', preset.attitude === 'passive');
     document.getElementById('att-resistant').classList.toggle('selected', preset.attitude === 'resistant');
   }

@@ -853,6 +853,7 @@ Web Audio playback requires a live provider and physical output device.
 - [done] Add a 120ms initial/recovery jitter buffer and retain decoded PCM for the output meter
 - [done] Enable browser echo cancellation, noise suppression, and automatic gain control for microphone capture
 - [done] Add `正常` as the selected default emotional state and include its instruction text
+- [done] Add `正常` as the selected default attitude with neutral system instructions and preset support
 - [done] Run 62 unit tests, Control syntax checks, arm64/x64 DMG builds, and bundled-resource secret scans
 - [done] Live operator verification: AI speech continuity issue reported resolved after the no-auto-discard, jitter-buffer, and echo-protection changes
 - [todo] Manual verification: interrupt/reconnect flushing remains to be exercised explicitly
