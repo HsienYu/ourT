@@ -743,4 +743,5 @@ Web Audio playback requires a live provider and physical output device.
 - [done] Add a 120ms initial/recovery jitter buffer and retain decoded PCM for the output meter
 - [done] Enable browser echo cancellation, noise suppression, and automatic gain control for microphone capture
 - [done] Add `正常` as the selected default emotional state and include its instruction text
-- [todo] Run full Main test/syntax/package verification and manually verify sustained provider speech, speaker echo resistance, and interrupt/reconnect flushing
+- [done] Run 126 unit tests, Control syntax checks, arm64/x64 DMG builds, and bundled-resource secret scans
+- [todo] Manual verification: sustained provider speech, speaker echo resistance, and interrupt/reconnect flushing
