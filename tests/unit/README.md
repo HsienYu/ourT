@@ -82,9 +82,11 @@ npm test
   variant precedence: live override, persisted generated variant, then original.
 - `stage-script.test.js` — covers zh-TW script line wrapping, page boundaries,
   and previous/next navigation clamping for Projection reading mode.
-- `audio-output.test.js` — covers the 10-second AI output-backlog circuit
-  breaker and RMS calculation from already-decoded PCM16 samples. Browser Web
-  Audio scheduling remains covered by the realtime manual protocol.
+- `audio-output.test.js` — covers the no-auto-discard output policy, the
+  10-second backlog warning threshold, 120ms jitter-buffer scheduling,
+  echo-cancellation microphone constraints, and RMS calculation from
+  already-decoded PCM16 samples. Browser Web Audio scheduling remains covered
+  by the realtime manual protocol.
 
 ## What's intentionally NOT covered here
 
