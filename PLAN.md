@@ -732,3 +732,112 @@ deliberate boundary and is manual-protocol verified instead
 - [done] Bound audio playback and discard stale provider/session output
 - [done] Run 115 unit tests, package arm64/x64 Electron DMGs, and update manual verification protocols
 - [todo] Manual verification: real provider catalog lists, 1,000+ character scripts with cast rules, and long-response/reconnect audio stability
+
+## Phase 17 — `lite` Branch: Remove KTV, Stage Script, Concise Mode; Harden AI Connection [done]
+
+Workflow: Lightweight removal (UI/route/library deletion) combined with TDD
+for the three connection-reliability fixes. Branched from `main` at
+`a684ec3`. This branch intentionally removes entire features rather than
+building new ones — App 2 (YOLO camera, `app2-yolo/`) is completely
+untouched, since it was never in scope for removal.
+
+### Removed entirely (deleted files)
+
+- [done] `server/lib/song-queue.js`, `song-importer.js`, `youtube-search.js`,
+  `lyrics-sync.js`, `lyrics-variant.js`, `stage-script.js`,
+  `voice-import-guard.js`, `ai-providers.js`, `song-storage.js`
+- [done] `server/scripts/generate-lyrics.js`, `scripts/import-song.js`
+- [done] `server/public/audience/index.html` (entire audience song-request page)
+- [done] `tests/unit/song-queue.test.js`, `lyrics-sync.test.js`,
+  `lyrics-variant.test.js`, `stage-script.test.js`, `voice-import-guard.test.js`,
+  `youtube-search.test.js`, `song-storage.test.js`
+- [done] `tests/manual/app3-ktv.md`, `stage-script-projection.md`
+
+### Stripped down (feature code removed, module kept)
+
+- [done] `server/index.js` — removed all KTV/lyrics/stage-script/audience
+  routes, `stageScriptState`, `generateLyricsLLM`, `VARIANT_PROMPTS`,
+  `lyricsOverrides`, `importJobs`; kept weather, RAG context, settings,
+  presets, and the realtime/bus WebSocket routes
+- [done] `server/lib/realtime-proxy.js` — removed
+  `handleResponseLengthCall`/`handleGeminiResponseLengthCall`,
+  `handleSearchSongCall`/`handleGeminiSearchSongCall`,
+  `handleImportSongCall`/`handleGeminiImportSongCall`,
+  `runVoiceTriggeredImport`, `announceImportCompletion`,
+  `buildOpenAITools`/`buildGeminiTools` (no tools remain to declare)
+- [done] `server/lib/realtime-session.js` — removed `didKtvStart`/`didKtvEnd`,
+  `responseLengthInstruction` and its tool builders, `buildSearchSongTool`/
+  `buildImportSongTool` and their Gemini declarations, and the `tools`
+  parameter from both `buildOpenAIConnectSession` and `buildGeminiSetup`
+- [done] `server/lib/settings.js` — removed `ktv`, `aiFeatures` settings
+  blocks; removed `anthropic`/`groq`/`mistral` API keys and all
+  text-generation model fields; removed `conciseInformationMode` from
+  preset persistence; `loadSettings()` now strips any stale `ktv`/
+  `aiFeatures`/`yolo` fields found in an older settings file
+- [done] `server/lib/provider-catalog.js` — removed `fetchTextModels`,
+  `TEXT_FALLBACK_MODELS`, `isTextModel` (no text-generation providers remain)
+- [done] `server/public/control/index.html` — removed the entire KTV queue
+  section, song search/import section, lyrics editor section, stage-script
+  section, `精簡資訊回覆` checkbox, and `AI 對話功能開關` settings block, plus
+  every JS function that only served those sections; settings now only
+  expose OpenAI/Gemini keys and Realtime/Live models
+- [done] `server/public/projection/index.html` — removed the KTV view
+  (lyrics sync, wipe animation, progress bar, cover art), the analysis
+  overlay, and the stage-script view; kept the AI transcript view, VAD dot,
+  weather status bar, and bus reconnect
+- [done] `server/public/monitor/index.html` — removed the KTV now-playing
+  strip and its `queue.updated`/`ktv.play`/`ktv.ended` bus handlers
+- [done] `ourT-electron/main.js` — removed the audience window, songs
+  directory seeding/copying, and the tray's audience menu items and
+  clipboard-URL action
+- [done] `ourT-electron/package.json` — removed the `../songs` →
+  `songs` `extraResources` bundling step
+- [done] `start.sh` — removed the Audience URL from the printed page list
+
+### Connection-reliability fixes (TDD: red first, confirmed in `tests/unit/lite-bugs.test.js`)
+
+- [done] **14.3** — a Gemini provider `error` message (no `serverContent`)
+  previously broadcast only `ai.error`, never `ai.done`; Projection/Monitor
+  could get stuck showing "thinking"/"speaking" forever after a Gemini-side
+  error. Fixed: `handleGeminiEvent()` now always broadcasts `ai.done`
+  immediately after `ai.error`, matching OpenAI's existing behavior.
+- [done] **14.5** — the bus's `session.update` forward
+  (`activeRealtimeWs.send(...)`) only checked `activeRealtimeWs` for
+  non-null, not `readyState`; sending to a `CLOSING` socket throws
+  synchronously and was uncaught. Fixed: added a
+  `readyState === WebSocket.OPEN` guard in `server/index.js` before forwarding.
+- [done] **14.6** — after the automatic-reconnect budget (3 attempts) was
+  exhausted, a manual `開始/連線` click ran `startSession()`, but
+  `reconnectAttempts` was only ever reset on a successful Gemini
+  `session.created` — so if the manual attempt also failed even once, the
+  very next `scheduleReconnect()` call saw the counter still at 3 and gave
+  up immediately, leaving the operator with no way to recover except an app
+  restart. Fixed: `startSession(manual = true)` now resets
+  `reconnectAttempts = 0` whenever it is called as a fresh, operator- or
+  parameter-change-triggered attempt (the default), while the automatic
+  retry timer explicitly calls `startSession(false)` so the exponential
+  backoff cap in `scheduleReconnect()` is still actually enforced across a
+  cascade of automatic failures.
+- [done] **14.1** (tool-call deadlock) — resolved as a side effect of
+  removing all tool/function-calling declarations; there are no longer any
+  asynchronous tool calls that can outlive a provider-socket replacement.
+
+### Verification
+
+- [done] `npm test`: 54 unit tests passing, 0 failing (down from 115 in
+  `main`, reflecting the removed KTV/lyrics/stage-script/tool-calling
+  surface; `lite-bugs.test.js` adds the 3 new regression tests)
+- [done] `node --check` passed for every modified/rewritten server module
+  and for the JS extracted from each rewritten HTML client
+  (`control/index.html`, `projection/index.html`, `monitor/index.html`)
+- [done] Confirmed `app2-yolo/` has zero uncommitted changes — App 2 was
+  correctly left untouched
+- [done] Updated `tests/unit/README.md`, `tests/manual/app1-realtime.md`,
+  top-level `README.md`, and `start.sh` to remove KTV/audience/concise-mode
+  references and document the lite scope and the three connection fixes
+- [todo] Manual verification on real hardware: long AI conversation session
+  stability, Gemini provider-error recovery (`ai.done` reaches Projection/
+  Monitor), and a manual reconnect after exhausting the automatic retry
+  budget actually succeeds
+- [todo] Rebuild and gitleaks-scan arm64/x64 Electron DMGs for the `lite`
+  branch before distributing

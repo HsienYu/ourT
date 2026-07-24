@@ -10,8 +10,6 @@
     --text: #e8e8e8;
     --muted: #444;
     --accent: #e0d0ff;
-    --accent2: #ffd0e0;
-    --wipe-color: var(--accent2);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -137,130 +135,6 @@
     padding-left: 2px;
   }
 
-  /* ── KTV view ── */
-  #ktv-view {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column;
-    justify-content: center; align-items: center;
-    padding: 40px 60px 60px;
-    transition: opacity 0.8s; text-align: center;
-    /* Cover art background applied via CSS variable */
-  }
-
-  /* Cover art blurred background */
-  #ktv-view::before {
-    content: '';
-    position: absolute; inset: 0; z-index: -1;
-    background-image: var(--cover-url, none);
-    background-size: cover; background-position: center;
-    filter: blur(40px) brightness(0.22);
-    transition: background-image 1.2s;
-  }
-
-  #ktv-song-info { margin-bottom: 28px; }
-
-  #ktv-title {
-    font-size: clamp(20px, 3vw, 38px);
-    color: var(--accent2); letter-spacing: 4px;
-    text-transform: uppercase;
-  }
-  #ktv-artist {
-    font-size: clamp(13px, 1.6vw, 20px);
-    color: var(--muted); letter-spacing: 2px; margin-top: 6px;
-  }
-  #ktv-status {
-    min-height: 1.4em; margin-top: 10px; color: #ff819c; font-size: 12px;
-    letter-spacing: 1px;
-  }
-
-  #ktv-lyrics {
-    display: flex; flex-direction: column;
-    align-items: center; gap: 18px;
-    min-height: 200px; justify-content: center;
-    position: relative;
-  }
-
-  .lyric-line {
-    font-size: clamp(18px, 2.6vw, 40px);
-    line-height: 1.4; color: #555;
-    transition: color 0.3s, transform 0.3s;
-    letter-spacing: 2px; position: relative;
-  }
-  .lyric-line.active {
-    color: var(--text);
-    transform: scale(1.05);
-  }
-  .lyric-line.prev {
-    color: #333;
-    font-size: clamp(14px, 2vw, 30px);
-  }
-
-  /* ── KTV lyric wipe mode ── */
-  /* In wipe mode the active line uses a ::before overlay swept by --wipe-pct */
-  .lyric-line.wipe-active {
-    color: #555; /* base colour — wipe overlay paints over it */
-  }
-  .lyric-line.wipe-active::before {
-    content: attr(data-text);
-    position: absolute; inset: 0;
-    color: var(--wipe-color);
-    /* clip from right: reveal left portion = wipe-pct % */
-    clip-path: inset(0 calc(100% - var(--wipe-pct, 0) * 1%) 0 0);
-    white-space: nowrap; overflow: hidden;
-    letter-spacing: inherit; font-size: inherit; line-height: inherit;
-  }
-
-  /* ── KTV progress bar ── */
-  #ktv-progress-wrap {
-    position: absolute; bottom: 48px; left: 60px; right: 60px;
-    height: 2px; background: rgba(255,255,255,0.08);
-  }
-  #ktv-progress-fill {
-    height: 100%;
-    background: var(--wipe-color);
-    width: 0%;
-    transition: width 0.5s linear;
-  }
-
-  /* ── Analysis overlay ── */
-  #analysis-overlay {
-    position: absolute; inset: 0;
-    background: rgba(0,0,0,0.88);
-    display: flex; flex-direction: column;
-    justify-content: center; align-items: center;
-    padding: 60px 80px;
-    transition: opacity 0.6s; z-index: 40;
-  }
-  #analysis-overlay.hidden { opacity: 0; pointer-events: none; }
-  #analysis-label {
-    font-size: 11px; letter-spacing: 3px; color: var(--muted);
-    text-transform: uppercase; margin-bottom: 24px;
-  }
-  #analysis-text {
-    font-size: clamp(16px, 2.2vw, 30px);
-    line-height: 1.8; color: var(--text);
-    text-align: center; max-width: 800px; white-space: pre-wrap;
-  }
-  #analysis-close {
-    margin-top: 32px; font-size: 10px; color: var(--muted);
-    letter-spacing: 2px; text-transform: uppercase;
-    border: 1px solid var(--muted); padding: 6px 16px;
-    cursor: pointer; background: transparent; font-family: monospace;
-  }
-  #analysis-close:hover { color: var(--text); border-color: var(--text); }
-
-  /* ── Stage script ── */
-  #script-view {
-    position: absolute; inset: 0; display: flex; align-items: center;
-    justify-content: center; padding: 7vh 10vw 9vh;
-  }
-  #script-lines { width: 100%; max-width: 1100px; font-size: clamp(20px, 2vw, 32px); line-height: 1.65; }
-  .script-line { min-height: 1.65em; color: var(--text); white-space: pre-wrap; width: 78%; }
-  .script-line.left { margin-right: auto; text-align: left; }
-  .script-line.right { margin-left: auto; text-align: right; }
-  .script-line.center { width: 100%; text-align: center; color: var(--muted); font-size: 0.78em; }
-  #script-page { position: absolute; right: 3vw; bottom: 4vh; color: var(--muted); font-size: 16px; letter-spacing: 2px; }
-
   /* ── Idle ── */
   #idle-view {
     position: absolute; inset: 0;
@@ -291,32 +165,6 @@
   <div id="ai-meta"></div>
 </div>
 
-<!-- KTV view -->
-  <div id="ktv-view" class="hidden">
-  <div id="ktv-song-info">
-    <div id="ktv-title">—</div>
-    <div id="ktv-artist">—</div>
-    <div id="ktv-status"></div>
-  </div>
-
-  <div id="ktv-lyrics"></div>
-  <audio id="ktv-audio" preload="auto"></audio>
-  <div id="ktv-progress-wrap"><div id="ktv-progress-fill"></div></div>
-</div>
-
-<!-- Stage script view -->
-<div id="script-view" class="hidden">
-  <div id="script-lines"></div>
-  <div id="script-page"></div>
-</div>
-
-<!-- Analysis overlay -->
-<div id="analysis-overlay" class="hidden">
-  <div id="analysis-label">AI 分析 — 他為什麼點這首歌？</div>
-  <div id="analysis-text"></div>
-  <button id="analysis-close" onclick="hideAnalysis()">關閉</button>
-</div>
-
 <!-- Status bar -->
 <div id="status-bar">
   <span id="status-weather">—</span>
@@ -326,30 +174,9 @@
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
-let currentMode          = 'idle';
-const transcriptTurns    = [];
-const streamingTurns     = { user: '', ai: '' };
-let lrcLines             = [];
-let currentLineIndex     = -1;
-let currentSongId        = null;
-let currentLyricsVariant = 'original';
-let currentLrcOffset     = 0; // seconds; positive delays lyrics, negative advances them
-let lyricsStyle          = 'line';   // 'line' | 'wipe'
-let currentWipeColor     = 'var(--accent2)';
-let stageScriptText      = '';
-let stageScriptPage      = 0;
-let stageScriptPageCount = 1;
-let stageScriptLines     = [];
-let lyricsLoadToken      = 0;
-
-// Variant → wipe colour mapping
-const VARIANT_COLORS = {
-  original:      'var(--accent2)',      // pink
-  'gender-swap': '#c0e0ff',             // cool blue
-  emotional:     '#ffaa80',             // warm orange
-  distorted:     '#d0a0ff',             // purple
-  live:          'var(--accent2)',
-};
+let currentMode       = 'idle';
+const transcriptTurns = [];
+const streamingTurns  = { user: '', ai: '' };
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const transcriptText = document.getElementById('transcript-text');
@@ -361,16 +188,7 @@ function setMode(mode) {
   currentMode = mode;
   document.getElementById('idle-view').classList.toggle('hidden', mode !== 'idle');
   document.getElementById('ai-view').classList.toggle('hidden', mode !== 'ai');
-  document.getElementById('ktv-view').classList.toggle('hidden', mode !== 'ktv');
-  document.getElementById('script-view').classList.toggle('hidden', mode !== 'script');
   document.getElementById('status-mode').textContent = mode.toUpperCase();
-}
-
-function renderStageScript() {
-  document.getElementById('script-lines').innerHTML = stageScriptLines.map((line) =>
-    `<div class="script-line ${line.side || 'left'}">${escHtml(line.text || '')}</div>`,
-  ).join('');
-  document.getElementById('script-page').textContent = `${stageScriptPage + 1} / ${stageScriptPageCount}`;
 }
 
 // ── Cursor / border state ─────────────────────────────────────────────────────
@@ -420,179 +238,6 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
-// ── KTV ───────────────────────────────────────────────────────────────────────
-function loadSong(item) {
-  const s = item.song;
-  currentSongId = s.id;
-  currentLyricsVariant = s.activeLyricsVariant || item.lyricsVariant || 'original';
-  currentLrcOffset = s.lrcOffset || 0;
-
-  document.getElementById('ktv-title').textContent  = s.title;
-  document.getElementById('ktv-artist').textContent = s.artist;
-  setKtvStatus('');
-
-  // Cover art blurred background
-  document.getElementById('ktv-view').style.setProperty(
-    '--cover-url', `url(/api/songs/${s.id}/cover)`
-  );
-
-  // Wipe colour based on lyrics variant
-  setWipeColor(currentLyricsVariant);
-
-  const audio = document.getElementById('ktv-audio');
-  audio.src = `/api/songs/${s.id}/audio`;
-
-  loadLyrics(s.id, currentLyricsVariant);
-
-  audio.oncanplay = () => audio.play().catch((error) => {
-    setKtvStatus(`無法播放音訊：${error.message}`);
-    console.error('[ktv] audio playback failed:', error);
-  });
-  audio.onerror = () => {
-    setKtvStatus('音訊載入失敗，請確認歌曲檔案是否存在');
-    console.error('[ktv] audio load failed:', audio.error);
-  };
-  audio.ontimeupdate = () => {
-    syncLyrics(audio.currentTime - currentLrcOffset);
-    updateProgress(audio.currentTime, audio.duration);
-  };
-  audio.onended = () => fetch('/api/queue/end', { method: 'POST' });
-
-  setMode('ktv');
-}
-
-function setKtvStatus(message) {
-  document.getElementById('ktv-status').textContent = message;
-}
-
-function setWipeColor(variant) {
-  currentWipeColor = VARIANT_COLORS[variant] || VARIANT_COLORS.original;
-  document.documentElement.style.setProperty('--wipe-color', currentWipeColor);
-}
-
-function loadLyrics(songId, variant) {
-  const token = ++lyricsLoadToken;
-  fetch(`/api/songs/${songId}/lyrics?variant=${variant}`)
-    .then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.text();
-    })
-    .then((lrc) => {
-      if (token !== lyricsLoadToken) return;
-      lrcLines = parseLrc(lrc);
-      currentLineIndex = -1;
-      renderLyrics(-1);
-    })
-    .catch((error) => {
-      if (token !== lyricsLoadToken) return;
-      lrcLines = [];
-      document.getElementById('ktv-lyrics').textContent = '歌詞載入失敗，請確認 LRC 檔案是否存在';
-      setKtvStatus(`歌詞錯誤：${error.message}`);
-      console.error('[ktv] lyrics load failed:', error);
-    });
-}
-
-function parseLrc(lrc) {
-  const lines = [];
-  const re = /\[(\d{2}):(\d{2})\.(\d{1,3})\](.*)/;
-  lrc.split('\n').forEach((line) => {
-    const m = line.match(re);
-    if (!m) return;
-    const time = parseInt(m[1]) * 60 + parseInt(m[2]) + parseInt(m[3].padEnd(3,'0')) / 1000;
-    lines.push({ time, text: m[4].trim() });
-  });
-  return lines.sort((a, b) => a.time - b.time);
-}
-
-function syncLyrics(currentTime) {
-  let idx = -1;
-  for (let i = 0; i < lrcLines.length; i++) {
-    if (lrcLines[i].time <= currentTime) idx = i; else break;
-  }
-  if (idx !== currentLineIndex) {
-    currentLineIndex = idx;
-    renderLyrics(idx);
-  }
-}
-
-// ── Wipe RAF ──────────────────────────────────────────────────────────────────
-let wipeRaf = null;
-
-function startWipe(lineIdx) {
-  if (wipeRaf) cancelAnimationFrame(wipeRaf);
-  const activeEl = document.querySelector('.lyric-line.wipe-active');
-  if (!activeEl) return;
-
-  const lineStart = lrcLines[lineIdx]?.time ?? 0;
-  const lineEnd   = lrcLines[lineIdx + 1]?.time ?? (lineStart + 4);
-  const duration  = Math.max(lineEnd - lineStart, 0.5);
-
-  const audio = document.getElementById('ktv-audio');
-  function tick() {
-    const elapsed = audio.currentTime - lineStart;
-    const pct = Math.min(elapsed / duration * 100, 100);
-    activeEl.style.setProperty('--wipe-pct', pct.toFixed(1));
-    if (pct < 100) wipeRaf = requestAnimationFrame(tick);
-  }
-  wipeRaf = requestAnimationFrame(tick);
-}
-
-function renderLyrics(idx) {
-  if (wipeRaf) { cancelAnimationFrame(wipeRaf); wipeRaf = null; }
-
-  const el   = document.getElementById('ktv-lyrics');
-  const prev = lrcLines[idx - 1]?.text || '';
-  const curr = lrcLines[idx]?.text     || '';
-  const next = lrcLines[idx + 1]?.text || '';
-  const nx2  = lrcLines[idx + 2]?.text || '';
-
-  if (lyricsStyle === 'wipe' && curr) {
-    el.innerHTML = [
-      prev ? `<div class="lyric-line prev">${escHtml(prev)}</div>` : '',
-      `<div class="lyric-line wipe-active" data-text="${escHtml(curr)}" style="--wipe-pct:0">${escHtml(curr)}</div>`,
-      next  ? `<div class="lyric-line">${escHtml(next)}</div>` : '',
-      nx2   ? `<div class="lyric-line" style="opacity:0.4">${escHtml(nx2)}</div>` : '',
-    ].join('');
-    startWipe(idx);
-  } else {
-    el.innerHTML = [
-      prev ? `<div class="lyric-line prev">${escHtml(prev)}</div>`   : '',
-      curr ? `<div class="lyric-line active">${escHtml(curr)}</div>` : '',
-      next ? `<div class="lyric-line">${escHtml(next)}</div>`        : '',
-      nx2  ? `<div class="lyric-line" style="opacity:0.4">${escHtml(nx2)}</div>` : '',
-    ].join('');
-  }
-}
-
-function updateProgress(currentTime, duration) {
-  if (!duration) return;
-  document.getElementById('ktv-progress-fill').style.width =
-    (currentTime / duration * 100).toFixed(2) + '%';
-}
-
-// ── Analysis overlay ──────────────────────────────────────────────────────────
-async function showAnalysis(item) {
-  const overlay = document.getElementById('analysis-overlay');
-  const textEl  = document.getElementById('analysis-text');
-  overlay.classList.remove('hidden');
-  textEl.textContent = '分析中⋯';
-  try {
-    const res  = await fetch('/api/ktv/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item }),
-    });
-    const json = await res.json();
-    textEl.textContent = json.analysis || '（無法取得分析）';
-  } catch {
-    textEl.textContent = '（分析請求失敗）';
-  }
-}
-
-function hideAnalysis() {
-  document.getElementById('analysis-overlay').classList.add('hidden');
-}
-
 // ── Bus ───────────────────────────────────────────────────────────────────────
 let bus = null;
 
@@ -638,7 +283,7 @@ function handleBusMessage(msg) {
 
     // ── Transcript ────────────────────────────────────────────────────────────
     case 'transcript.user.delta':
-      if (currentMode !== 'ai' && currentMode !== 'script') setMode('ai');
+      if (currentMode !== 'ai') setMode('ai');
       setCursorState('idle');
       appendTranscriptDelta('user', msg.delta);
       break;
@@ -648,7 +293,7 @@ function handleBusMessage(msg) {
       break;
 
     case 'transcript.ai.delta':
-      if (currentMode !== 'ai' && currentMode !== 'script') setMode('ai');
+      if (currentMode !== 'ai') setMode('ai');
       setCursorState('speaking');
       appendTranscriptDelta('ai', msg.delta);
       break;
@@ -666,79 +311,6 @@ function handleBusMessage(msg) {
       clearTranscript();
       break;
 
-    // ── Mode switch ───────────────────────────────────────────────────────────
-    case 'projection.mode':
-      if (msg.mode === 'ai')  setMode('ai');
-      if (msg.mode === 'ktv') setMode('ktv');
-      break;
-
-    case 'stage_script.state':
-      stageScriptText = msg.text || '';
-      stageScriptPage = msg.page || 0;
-      stageScriptPageCount = msg.pageCount || 1;
-      stageScriptLines = Array.isArray(msg.lines) ? msg.lines : [];
-      renderStageScript();
-      setMode('script');
-      break;
-
-    case 'stage_script.hide':
-      setMode('ai');
-      break;
-
-    // ── Lyric style toggle ────────────────────────────────────────────────────
-    case 'projection.lyric_style':
-      lyricsStyle = msg.style;   // 'wipe' | 'line'
-      renderLyrics(currentLineIndex);
-      break;
-
-    // ── KTV ──────────────────────────────────────────────────────────────────
-    case 'ktv.play':
-      loadSong(msg.item);
-      break;
-
-    case 'ktv.ended':
-      document.getElementById('ktv-audio').pause();
-      document.getElementById('ktv-audio').removeAttribute('src');
-      document.getElementById('ktv-audio').load();
-      currentSongId = null;
-      lrcLines = [];
-      currentLineIndex = -1;
-      if (wipeRaf) { cancelAnimationFrame(wipeRaf); wipeRaf = null; }
-      document.getElementById('ktv-view').style.removeProperty('--cover-url');
-      setMode('ai');
-      break;
-
-    case 'ktv.analyze':
-      showAnalysis(msg.item);
-      break;
-
-    // ── LLM lyrics override (hot-swap mid-song) ───────────────────────────────
-    case 'ktv.lyrics.override':
-      if (msg.songId === currentSongId) {
-        lyricsLoadToken += 1;
-        lrcLines = parseLrc(msg.lrcText);
-        currentLineIndex = -1;
-        currentLyricsVariant = msg.variant || 'live';
-        setWipeColor(currentLyricsVariant);
-        renderLyrics(-1);
-      }
-      break;
-
-    case 'ktv.lyrics.override.cleared':
-      if (msg.songId === currentSongId) {
-        currentLyricsVariant = msg.variant || 'original';
-        setWipeColor(currentLyricsVariant);
-        loadLyrics(currentSongId, currentLyricsVariant);
-      }
-      break;
-
-    // ── Live rehearsal sync tuning (歌詞偏移 slider in /control) ────────────────
-    case 'ktv.offset.update':
-      if (msg.songId === currentSongId) {
-        currentLrcOffset = msg.lrcOffset || 0;
-      }
-      break;
-
     // ── Weather ───────────────────────────────────────────────────────────────
     case 'weather.update':
       if (msg.weather?.temperature) {
@@ -746,9 +318,6 @@ function handleBusMessage(msg) {
           `${msg.weather.temperature}°C  ${msg.weather.humidity}%RH  ${msg.weather.pressure}hPa  ${msg.weather.condition}`;
       }
       break;
-
-    case 'queue.updated':
-      break;  // projection does not render queue
   }
 }
 

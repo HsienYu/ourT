@@ -16,7 +16,6 @@ const {
 } = require('electron');
 const { fork }  = require('child_process');
 const path      = require('path');
-const os        = require('os');
 const fs        = require('fs');
 const { WebSocket } = require('ws'); // main process is plain Node — no browser globals
 const { isBuildExpired, nextExpiryCheckDelay } = require('./build-expiry');
@@ -29,14 +28,11 @@ const SERVER_DIR  = IS_PACKAGED
   ? path.join(process.resourcesPath, 'server')
   : path.join(__dirname, '../server');
 const SERVER_ENTRY = path.join(SERVER_DIR, 'index.js');
-const BUNDLED_SONGS_DIR = path.join(SERVER_DIR, '../songs');
 
 // User config has one canonical location in Application Support.
 const USER_DATA   = app.getPath('userData');
 const SETTINGS_PATH = path.join(USER_DATA, 'settings.json');
 const LEGACY_ENV_PATH = path.join(USER_DATA, '.env');
-const RUNTIME_SONGS_DIR = path.join(USER_DATA, 'songs');
-const { seedSongsDirectory } = require(path.join(SERVER_DIR, 'lib/song-storage'));
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let serverProcess  = null;
@@ -45,7 +41,6 @@ let tray           = null;
 let projectionWin  = null;
 let monitorWin     = null;
 let controlWin     = null;
-let audienceWin    = null;
 let expiryTimer    = null;
 
 // ── App ready ──────────────────────────────────────────────────────────────────
@@ -58,7 +53,6 @@ app.whenReady().then(async () => {
     credits: 'Developed by chenghsienyu\nLicensed under Creative Commons Attribution 4.0 International (CC BY 4.0).',
   });
   ensureSettingsDirectory();
-  ensureSongsDirectory();
   await startServer();
   openWindows();
   connectBus();
@@ -101,10 +95,6 @@ function ensureSettingsDirectory() {
   if (!fs.existsSync(USER_DATA)) fs.mkdirSync(USER_DATA, { recursive: true });
 }
 
-function ensureSongsDirectory() {
-  if (IS_PACKAGED) seedSongsDirectory(BUNDLED_SONGS_DIR, RUNTIME_SONGS_DIR);
-}
-
 function buildServerPath() {
   // Apps launched from Finder do not inherit the user's shell PATH, so include
   // the two standard Homebrew locations used by yt-dlp and ffmpeg on macOS.
@@ -122,7 +112,6 @@ function startServer() {
         OURT_SETTINGS_PATH: SETTINGS_PATH,
         OURT_LEGACY_SETTINGS_PATH: path.join(SERVER_DIR, 'settings.json'),
         OURT_LEGACY_ENV_PATH: LEGACY_ENV_PATH,
-        OURT_SONGS_DIR: IS_PACKAGED ? RUNTIME_SONGS_DIR : BUNDLED_SONGS_DIR,
         PATH: buildServerPath(),
         NODE_ENV: 'production',
       },
@@ -224,18 +213,6 @@ function openControlSettings() {
   }
 }
 
-function openAudienceWindow() {
-  const audienceUrl = base('/audience');
-  if (!audienceWin || audienceWin.isDestroyed()) {
-    audienceWin = createWindow({ title: 'ourT — Audience Song Request', width: 420, height: 760 });
-    audienceWin.loadURL(audienceUrl);
-    audienceWin.on('closed', () => { audienceWin = null; });
-  } else {
-    audienceWin.show();
-    audienceWin.focus();
-  }
-}
-
 function openWindows() {
   // ── Projection: windowed by default, can go fullscreen via tray/control ───────────
   projectionWin = createWindow({
@@ -326,32 +303,10 @@ function createTray() {
         }
       },
     },
-    {
-      label: '開啟觀眾點歌',
-      click: () => openAudienceWindow(),
-    },
     { type: 'separator' },
     {
       label: '關於 ourT',
       click: () => app.showAboutPanel(),
-    },
-    {
-      label: '複製觀眾點歌網址',
-      click: () => {
-        const { clipboard } = require('electron');
-        // Get local IP
-        const nets = os.networkInterfaces();
-        let localIP = 'localhost';
-        for (const ifaces of Object.values(nets)) {
-          for (const iface of ifaces) {
-            if (iface.family === 'IPv4' && !iface.internal) {
-              localIP = iface.address; break;
-            }
-          }
-        }
-        clipboard.writeText(`http://${localIP}:${serverPort}/audience`);
-        tray.setToolTip(`已複製：http://${localIP}:${serverPort}/audience`);
-      },
     },
     {
       label: '開啟系統設定',
@@ -398,9 +353,6 @@ function connectBus() {
     }
     if (msg.type === 'projection.fullscreen') {
       toggleProjectionFullscreen();
-    }
-    if (msg.type === 'audience.open') {
-      openAudienceWindow();
     }
   };
 

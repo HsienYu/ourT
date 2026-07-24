@@ -1,8 +1,15 @@
-# ourT — Theatre Performance Apps
+# ourT — Theatre Performance Apps (lite)
 
-Three apps for live performance, all running locally on a Mac.
+Two apps for live performance, all running locally on a Mac.
 
 Developed by chenghsienyu. Licensed under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/).
+
+This is the **lite** branch: KTV/karaoke, stage-script generation, 精簡資訊回覆
+(concise reply mode), and voice-triggered tool calling (response length,
+song search/import) have all been removed — along with their entire UI
+sections, server routes, and libraries — to keep the app smaller and the
+realtime AI connection more robust. Only the AI Realtime conversation
+(App 1) and the YOLO camera (App 2) remain.
 
 ---
 
@@ -10,7 +17,7 @@ Developed by chenghsienyu. Licensed under the [Creative Commons Attribution 4.0 
 
 | Server | Port | Apps |
 |---|---|---|
-| Node.js | 3000 | App 1 (AI Character) + App 3 (KTV) |
+| Node.js | 3000 | App 1 (AI Character) |
 | Python FastAPI + PyQt6 | 3001 | App 2 (YOLO Camera) |
 
 ---
@@ -35,7 +42,6 @@ The terminal prints your local network URLs:
   Operator panel:  http://192.168.x.x:3000/control
   Projection:      http://192.168.x.x:3000/projection
   Monitor:         http://192.168.x.x:3000/monitor
-  Audience:        http://192.168.x.x:3000/audience
   YOLO panel:      http://192.168.x.x:3001/panel
 ```
 
@@ -45,7 +51,7 @@ The terminal prints your local network URLs:
 
 ### 1. API Keys and Settings
 
-Start the app, open `/control`, then expand `系統設定`. The Control UI is the only normal editor for API keys, models, KTV options, and audio devices.
+Start the app, open `/control`, then expand `系統設定`. The Control UI is the only normal editor for the OpenAI/Gemini API keys, models, and audio devices.
 
 Electron stores the canonical configuration in `~/Library/Application Support/ourt/settings.json`. Development mode stores it in `server/settings.json`. Both files are ignored by Git.
 
@@ -70,10 +76,9 @@ pip install -r requirements.txt
 
 | URL | Device | Purpose |
 |---|---|---|
-| `/projection` | Projection screen (full-screen browser) | Audience-facing: AI text + KTV lyrics |
+| `/projection` | Projection screen (full-screen browser) | Audience-facing: AI transcript |
 | `/monitor` | Stage monitor or tablet facing performer | Performer cues: MIC live, AI state, transcript, params |
-| `/control` | Operator phone/tablet | Full control panel: AI, KTV queue, lyrics editor |
-| `/audience` | Audience phones | Song request page |
+| `/control` | Operator phone/tablet | Full control panel: AI settings and session control |
 | `localhost:3001/panel` | Operator monitor | YOLO bias, labels, toggles, live preview |
 | `localhost:3001/preview` | Any browser | MJPEG annotated camera feed |
 
@@ -93,60 +98,34 @@ Either provider is selectable in `/control` → `系統設定` → `Realtime 語
 6. Adjust attitude/state/sliders/prompt override → pushed live automatically (debounced ~400ms), no button needed. Behavior differs by provider: OpenAI updates in place; **Gemini Live has no live-update mechanism at all and always reconnects** to apply any change (its `setup` message — voice, model, instructions — is one-time only). Voice changes always reconnect on both providers.
 7. **打斷 AI** interrupts current AI response instantly (also triggers automatically when the performer talks over the AI — barge-in)
 8. **清除投影文字** wipes the projection screen
-9. **精簡資訊回覆**: toggle it on for labels, summaries, and observations that should answer directly in 1–3 short sentences without questions or topic extension; OpenAI applies it live, while Gemini reconnects. The performer can also trigger this by voice (see below).
-10. **AI 角色預設**: save the current voice/attitude/state/sliders/prompt and concise-information mode as a named, numbered preset for instant recall during the show; expandable list, not capped at 4
-
-### KTV automatically pauses the AI conversation
-
-Starting a KTV song automatically closes the AI Realtime session (mic,
-output audio, and the connection all stop) — the Control log shows `KTV 開始
-播放，AI 對話暫停`. When the song ends, the AI session automatically
-reconnects (`KTV 播放結束，AI 對話自動重新連線`). Skipping directly from one
-song to another does not reconnect in between — the AI stays disconnected the
-whole time KTV is active. An explicit 結束 (not KTV-triggered) also clears
-short-term memory (see below); a KTV-triggered pause does not, so the
-conversation continues naturally once the song ends.
+9. **AI 角色預設**: save the current voice/attitude/state/sliders/prompt as a named, numbered preset for instant recall during the show; expandable list, not capped at 4
 
 ### Short-term memory
 
 The AI remembers roughly the last 4 exchanges — bounded on purpose, not the
 whole conversation. This is what's carried across a reconnect (a Gemini
-parameter change, an OpenAI voice change, or a KTV pause/resume above) so the
-AI doesn't feel like it forgot everything mid-show. Tapping 結束 clears it
-intentionally; the next 開始/連線 starts fresh.
+parameter change or an OpenAI voice change) so the AI doesn't feel like it
+forgot everything mid-show. Tapping 結束 clears it intentionally; the next
+開始/連線 starts fresh.
 
-### AI 對話功能開關 (voice-triggered capabilities)
+### Connection reliability
 
-Two opt-in capabilities, toggled in `/control` → **AI 對話功能開關** (a
-separate settings block from `系統設定`). Both require ending and restarting
-the session to apply — tool declarations are connect-time-only on both
-providers, the same constraint as a voice change.
+Three fixes keep the AI conversation from silently stopping:
 
-- **語音調整回應長度** (default on): the performer can say things like `簡短
-  一點` or `多說一點` mid-conversation, and the AI adjusts its own response
-  length going forward — the same underlying setting as the `精簡資訊回覆`
-  checkbox, just voice-triggered instead of operator-triggered. Applies
-  live on OpenAI; causes one reconnect on Gemini.
-- **語音搜尋並下載歌曲** (default **off** — opt-in, resource/cost risk): lets
-  the performer ask the AI to find a KTV song before switching into karaoke.
-  The AI searches YouTube, reads back 1-2 candidates, waits for a spoken
-  confirmation, then starts the real download (30-90s) in the background and
-  announces completion once done. Only adds the song to the catalog — never
-  auto-queues it, so the operator still reviews it before it's played. Capped
-  at 5 voice-triggered imports per server run (the operator-driven `/control`
-  search+import UI has no such cap).
+- A Gemini provider error now always sends a matching completion signal, so
+  Projection and Monitor never get stuck showing "thinking"/"speaking" forever.
+- The operator control panel never forwards a live parameter update to a
+  realtime connection that isn't actually open.
+- Tapping **開始 / 連線** always resets the automatic-reconnect budget, so a
+  session that already exhausted its 3 automatic retries can still be
+  restarted manually instead of failing immediately again.
 
 ### RAG: background reference material
 
 `server/rag/*.md` (演出概念 + 台灣同志運動歷史事件，見
 `server/rag/taiwan-lgbt-history.md`) is available to the live AI conversation
-(as well as lyrics rewrite and song analysis, which already used it) — the AI
-references it only when a conversation naturally touches on those topics, not
-by reciting it unprompted.
-
-### 舞台劇本
-
-Control 的 `舞台劇本` 區塊會使用歌詞改寫的文字模型與演出背景，產生至少 1,000 字的臺灣繁體中文多行對話腳本。角色人數可設為 1–8；啟用 `系統作為角色` 時，系統佔用該人數中的一席。Projection 一次顯示一段多行對話，操作員以 `上一段` / `下一段` 控制閱讀；KTV 開始時會退出劇本並在歌曲結束後回到 AI 畫面。
+via `GET /api/rag/context` — the AI references it only when a conversation
+naturally touches on those topics, not by reciting it unprompted.
 
 ### Voice options
 
@@ -171,9 +150,9 @@ confirmed working on the current Realtime model, so they're excluded):
 **Gemini Live**: 30 prebuilt voices (Puck, Charon, Kore, Fenrir, Aoede, …) —
 see the `Gemini Live 聲音` dropdown in `系統設定` for the full list.
 
-Realtime/live model dropdowns (`OpenAI Realtime 模型`, `Gemini Live 模型`,
-`Gemini 文字模型`) are fetched live from each provider's real `models.list`
-API (cached ~10 minutes, falls back to a static list if offline or no key).
+Realtime/live model dropdowns (`OpenAI Realtime 模型`, `Gemini Live 模型`) are
+fetched live from each provider's real `models.list` API (cached ~10
+minutes, falls back to a static list if offline or no key).
 
 ### Performer cues (visible on `/monitor`)
 
@@ -190,126 +169,6 @@ API (cached ~10 minutes, falls back to a static list if offline or no key).
 - Small dot top-left pulses during mic-active
 - Transcript border: dim when performer's turn, accent colour when AI responds
 - Cursor: three-dot wave when AI thinking, fast blink when streaming
-
----
-
-## App 3 — KTV
-
-### Add songs
-
-#### Option A: Search + import from `/control` (recommended)
-
-In `/control`, use the **搜尋並匯入歌曲** search box (KTV section) — type a
-song name or artist, pick from the results (thumbnail/title/channel/duration
-shown), tap **匯入**. No YouTube API key or registration needed — search uses
-`yt-dlp`'s built-in `ytsearch`. The server downloads the audio, transcribes
-lyrics with word-level-refined timestamps (see Sync accuracy below), and adds
-the song to the catalog automatically. Import runs in the background
-(30–90s); the button shows live progress and switches to `✓ 已匯入` when done.
-Open audience and control pages receive the new song immediately; no server or
-page restart is required.
-
-**On Spotify:** direct audio streaming/synchronized lyrics from Spotify are
-not usable here — Spotify's developer terms explicitly prohibit using their
-platform for public/commercial playback, and there is no public lyrics API
-at all. Metadata-only integration (search + cover art, audio still from
-YouTube) is a possible future addition — see `PLAN.md` Phase 11.
-
-#### Option B: CLI import
-
-```bash
-cd server
-node scripts/import-song.js \
-  --url "https://youtube.com/watch?v=..." \
-  --title "愛你" \
-  --artist "張惠妹" \
-  --tags "流行,愛情"
-```
-
-Same underlying pipeline as Option A (`server/lib/song-importer.js`) — useful
-for scripting a batch import ahead of a show.
-
-Requires: `brew install yt-dlp ffmpeg`. The packaged macOS App explicitly
-searches both Apple Silicon Homebrew (`/opt/homebrew/bin`) and Intel Homebrew
-(`/usr/local/bin`), so restart the App after installing either tool.
-
-#### Option C: Manual
-
-1. Add `.mp3` to `songs/audio/<id>.mp3`
-2. Add `.lrc` to `songs/lyrics/<id>.lrc`
-3. Add cover image to `songs/covers/<id>.jpg` (optional)
-4. Add entry to `songs/index.json`
-
-#### LRC format
-
-```
-[00:12.34]第一行歌詞
-[00:16.00]第二行歌詞
-```
-
-#### Sync accuracy
-
-Import requests Whisper's `timestamp_granularities: ["word", "segment"]`
-(OpenAI API path only — the local `whisper` CLI fallback stays segment-level)
-and anchors each lyric line to its first word's actual start time rather than
-the segment's start, which often includes a little leading silence. If a
-song's sync still feels slightly off after import, use the **歌詞偏移**
-slider in `/control`'s KTV section while the song is playing — it shifts the
-whole song's timing by up to ±2000ms in real time and saves the value to that
-song's catalog entry, so it's remembered for future plays without
-re-importing.
-
-### LLM lyrics rewrite
-
-```bash
-# Pre-generate all variants for all songs before the performance:
-cd server
-node scripts/generate-lyrics.js
-
-# One song, one variant:
-node scripts/generate-lyrics.js --song <id> --variant gender-swap
-
-# Force regeneration:
-node scripts/generate-lyrics.js --force
-```
-
-Variants: `gender-swap` (性別互換), `emotional` (情緒放大), `distorted` (超現實扭曲)
-
-**Auto-rewrite on audience request:** Enable `KTV 自動改寫` in `/control` → `系統設定`.
-The LLM rewrites lyrics in the background when a song enters the queue.  
-If completed before the song plays, modified lyrics appear immediately.  
-If still generating, original plays first and lyrics swap mid-song automatically.
-
-**RAG context:** Place performance concept documents (`.md` or `.txt`) in `server/rag/`.  
-Claude reads them before every rewrite to align the lyrics with the show's artistic intent.
-
-### KTV operator flow
-
-1. Audience requests songs on `/audience`
-2. Or select a catalog song in **控制台選歌** and choose **加入佇列** or **播放此歌**
-3. Queue appears in operator panel
-4. Tap **播放** to start the next request
-5. Tap **切歌** to stop the current song and immediately start the next request; it stops playback when the queue is empty
-6. Toggle **歌詞模式：整行 / 掃光** for line-highlight vs karaoke wipe
-7. **Lyrics Editor** section: select variant, generate with LLM, or edit LRC directly and push to projection
-8. Tap **他點這首歌有什麼樣的傾向？** (operator or audience) for Claude analysis overlay — the prompt used can be customized via `系統設定` → `歌曲分析自訂提示`, leave empty for the built-in default
-
-The Control badge reports Projection connection status. Playback may start
-before Projection connects; when Projection connects or reconnects, the server
-sends it the current song again.
-
-Switching Control from **AI 對話** to **KTV** automatically opens the audience
-song-request page. In Electron this is one reusable `ourT — Audience Song Request`
-window; in a normal browser it is a popup and may require popup permission.
-
-### KTV variant wipe colours
-
-| Variant | Wipe colour |
-|---|---|
-| original | Pink |
-| gender-swap | Cool blue |
-| emotional | Warm orange |
-| distorted | Purple |
 
 ---
 
@@ -371,10 +230,10 @@ python setup.py py2app
 
 ---
 
-## Electron App (App 1 + 3)
+## Electron App (App 1)
 
-Bundles the Node.js server into a native macOS `.app`.  
-Three windows open automatically: Projection, Monitor, Control (opens at position 60, 60).  
+Bundles the Node.js server into a native macOS `.app`.
+Three windows open automatically: Projection, Monitor, Control (opens at position 60, 60).
 Tablet/phone access still works via local WiFi.
 
 ```bash
@@ -414,12 +273,6 @@ default Electron icon and a plain DMG window. Add real assets there and point
 
 API keys and all runtime settings are read from `~/Library/Application Support/ourt/settings.json` and edited in `/control`. The Electron tray item `開啟系統設定` opens that UI. Existing legacy `server/settings.json` values and `.env` keys are imported once when this JSON file is first created — **only during local development**, never inside a built app.
 
-Packaged App song data is stored separately at
-`~/Library/Application Support/ourt/songs/`. On first launch the App copies
-its bundled starter catalog/media there; all later imports, lyric edits, and
-catalog changes use this writable directory. This prevents imported songs from
-being written into the signed App bundle and preserves them across relaunches.
-
 `server/settings.json` (your local dev API keys) is explicitly excluded from
 the `extraResources` copy step in `ourT-electron/package.json` (`!settings.json`
 in the filter). A built `.app`/`.dmg` therefore never bundles your local keys —
@@ -448,13 +301,10 @@ relaunch.
 ## Pre-Performance Checklist
 
 - [ ] API keys and provider/model selection verified in `/control` → `系統設定`
-- [ ] At least 3 songs in `songs/index.json` with audio + LRC
-- [ ] LLM lyrics variants pre-generated: `node scripts/generate-lyrics.js`
 - [ ] `server/rag/` contains performance concept documents
 - [ ] YOLO model downloaded: `app2-yolo/pose_landmarker_lite.task`
 - [ ] `/control`, `/projection`, `/monitor` open and connected (green badge)
 - [ ] Test mic: speak → transcript appears on projection within 2s
-- [ ] Test KTV: request a song → plays on projection with lyrics
 - [ ] Full manual verification: `tests/manual/`
 
 ---
@@ -467,15 +317,11 @@ relaunch.
 | `AI 未開始` badge stays after tapping 開始 | Mic permission denied | Check browser permissions |
 | Transcript never appears on projection | `/projection` not connected to bus | Refresh `/projection` page |
 | `MediaPipe: model not found` | Missing `.task` file | Run `python -c "from processors.yolo_detector import _ensure_model; _ensure_model()"` in venv |
-| LRC lyrics not syncing | Whisper timing slightly off for that song | Use the 歌詞偏移 slider in `/control`'s KTV section while the song plays — no need to hand-edit `songs/index.json` |
-| KTV auto-rewrite not working | Auto-rewrite disabled | Enable KTV 自動改寫 in `/control` → `系統設定` |
 | NDI stream not visible | NDI SDK not installed | Download from ndi.video, then `pip install ndi-python` |
-| `搜尋失敗：spawn yt-dlp ENOENT` | Finder-launched Electron did not inherit the Homebrew PATH, or `yt-dlp` is absent | Update to the latest App, then restart it. If the new message still says `yt-dlp 找不到`, run `brew install yt-dlp`; otherwise update with `brew upgrade yt-dlp` |
-| 搜尋並匯入歌曲 search returns no results / errors | YouTube rate-limiting or an outdated `yt-dlp` | Run `brew upgrade yt-dlp` and retry later if YouTube is rate-limiting |
-| Song import stuck on `轉錄歌詞中…` | No OpenAI key and no local `whisper` installed | Add an OpenAI key in `系統設定`, or `pip install openai-whisper` for the local fallback |
 | Projection fullscreen toggle only hides the menu bar, doesn't resize | Fixed — uses platform-native `setFullScreen()`, not kiosk mode (kiosk had known Electron/macOS reliability bugs) | Update to latest; if still stuck, check the Electron main-process console for `[main] projection fullscreen →` log lines |
 | Saving an AI character preset silently does nothing in the packaged app | Fixed — Electron does not implement `window.prompt()` at all; preset naming now uses an in-page modal | Update to latest; verify in the actual `.app`, not just a browser tab, since `window.prompt()` works fine in a regular browser but throws in Electron |
 | Gemini Live disconnects every time a parameter changes | Expected, not a bug — Gemini's public Live API has no live-update mechanism at all, so any parameter change reconnects | Confirm the console shows a clean `1000` close, not `1007 Request contains an invalid argument`, which would indicate a regression |
+| AI stops responding and never recovers | Fixed in lite — a Gemini provider error now always sends a matching completion signal, and a manual `開始/連線` always resets the automatic-reconnect budget | Update to latest; if it still happens, capture the Control log and server console output |
 | 測試麥克風 / mic input doesn't work in the packaged `.app` (worked fine in `npm start`) | Fixed — hardened-runtime code signing needs the explicit `com.apple.security.device.audio-input` entitlement, or macOS blocks mic capture outright regardless of the permission dialog | Rebuild with latest; verify with `codesign -d --entitlements - ourT.app` shows `com.apple.security.device.audio-input`; if still blocked, `tccutil reset Microphone com.ourt.performance` and relaunch |
 
 ---
@@ -490,10 +336,10 @@ node --test tests/unit/*.test.js
 
 Pure-logic unit tests (Node's built-in `node:test`, no extra dependency) — see
 `tests/unit/README.md`. Covers session payload builders, the per-provider
-reconnect decision, preset CRUD, and provider-catalog fetch/cache/fallback
-logic. Anything requiring a live provider connection, real audio hardware, or
-the actual Electron app is covered by the manual protocols in `tests/manual/`
-instead.
+reconnect decision, preset CRUD, provider-catalog fetch/cache/fallback logic,
+and the three connection-reliability regression fixes. Anything requiring a
+live provider connection, real audio hardware, or the actual Electron app is
+covered by the manual protocols in `tests/manual/` instead.
 
 ---
 
@@ -501,7 +347,7 @@ instead.
 
 ```
 ourT/
-  server/                       # Node.js backend + frontend (Apps 1 + 3)
+  server/                       # Node.js backend + frontend (App 1)
     index.js                    # Express + WS server
     lib/
       realtime-proxy.js         # OpenAI Realtime / Gemini Live WebSocket bridge
@@ -509,20 +355,13 @@ ourT/
       provider-catalog.js       # Voice catalogs + live OpenAI/Gemini model fetching
       settings.js                # Runtime settings + character preset persistence
       weather.js                # OpenMeteo fetch (Chiayi)
-      song-queue.js             # KTV queue + catalog read/write (addSongToCatalog, updateSongOffset)
-      song-importer.js          # Shared import pipeline: yt-dlp download + word-refined Whisper LRC
-      lyrics-sync.js            # Pure LRC timestamp/offset logic (unit-tested)
-      youtube-search.js         # yt-dlp ytsearch wrapper, no API key needed
+      reconnect-retry.js        # Bounded automatic-reconnect retry policy (unit-tested)
     public/
       control/index.html        # Operator control panel
       control/pcm-processor.js  # AudioWorklet (mic PCM16)
-      projection/index.html     # Shared projection screen (AI + KTV)
+      projection/index.html     # Projection screen (AI transcript)
       monitor/index.html        # Performer stage monitor
-      audience/index.html       # Audience song request
-    rag/                        # RAG context docs for LLM lyrics rewrite
-    scripts/
-      generate-lyrics.js        # Pre-generate LLM lyrics variants (CLI)
-      import-song.js            # CLI wrapper around lib/song-importer.js
+    rag/                        # RAG context docs for the AI conversation
   app2-yolo/                    # Python YOLO camera
     app.py                      # PyQt6 standalone GUI (+ embedded FastAPI)
     main.py                     # Headless FastAPI web server
@@ -536,15 +375,10 @@ ourT/
     output/
       ndi_output.py             # NDI video send
       syphon_output.py          # Syphon video send (macOS)
-  ourT-electron/                # Electron bundle (App 1 + 3)
+  ourT-electron/                # Electron bundle (App 1)
     main.js                     # Electron main process
     package.json                # electron-builder config
     dist/                       # Build output (.dmg, git-ignored — never bundles settings.json)
-  songs/
-    index.json                  # Song catalog
-    audio/                      # .mp3 files (git-ignored)
-    lyrics/                     # .lrc files + LLM variants
-    covers/                     # Cover art (git-ignored)
   experiments/                  # Prototypes / spikes
   tests/
     unit/                       # Automated pure-logic tests (node:test)

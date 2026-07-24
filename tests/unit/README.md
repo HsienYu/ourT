@@ -5,6 +5,11 @@ dependency). These cover only logic extracted from hardware/live-API-coupled
 code — the realtime WebSocket bridging itself is verified manually (see
 `tests/manual/`).
 
+This is the `lite` branch: KTV/karaoke, stage-script generation, concise
+reply mode, and voice-triggered tool calling (response length, song
+search/import) were removed. Only the AI Realtime conversation (OpenAI or
+Gemini Live) remains.
+
 ## How to run
 
 From the repository root:
@@ -30,67 +35,43 @@ npm test
   zh-TW (臺灣繁體中文) default instructions are always present on both. Also
   covers: short-term rolling memory (`appendTranscriptTurn`,
   `buildGeminiSeedTurns`, `buildOpenAISeedItems` — bounded history seeded into
-  a fresh connection so a reconnect doesn't start the conversation cold);
-  KTV/AI mutual-exclusion decisions (`didKtvStart`/`didKtvEnd` — deliberately
-  do NOT fire on a skip directly from one song to another); and the
-  voice-triggered tool declarations/instruction text for response-length
-  control and song search/import (`responseLengthInstruction`,
-  `buildResponseLengthTool`/`buildResponseLengthFunctionDeclaration`,
-  `buildSearchSongTool`/`buildSearchSongFunctionDeclaration`,
-  `buildImportSongTool`/`buildImportSongFunctionDeclaration`), including that
-  `buildOpenAIConnectSession`/`buildGeminiSetup` omit `tools` entirely when
-  none are enabled (backward compatible with sessions using no tools).
+  a fresh connection so a reconnect doesn't start the conversation cold); and
+  regression guards confirming that KTV mutual-exclusion helpers and all
+  tool/function-calling builders (removed in lite) are not exported.
 - `settings-presets.test.js` — covers the character-preset CRUD logic in
   `server/lib/settings.js` (`getPresets`/`savePreset`/`deletePreset`), using an
   isolated temp settings file per test via `OURT_SETTINGS_PATH` so it never
-  touches the real `server/settings.json`, including concise-information mode
-  persistence across overwrite and reload.
+  touches the real `server/settings.json`. Also covers stripping stale
+  `ktv`/`aiFeatures`/`yolo` fields left over from a pre-lite settings file, and
+  confirms the lite defaults expose only the realtime-voice provider keys
+  (OpenAI, Gemini).
 - `provider-catalog.test.js` — covers `server/lib/provider-catalog.js`: the
   static voice catalogs (accuracy checks against each provider's documented
-  enum) and the live model-fetch/cache/fallback logic, using an injectable
-  `fetch` mock so no real network calls are made.
-- `lyrics-sync.test.js` — covers `server/lib/lyrics-sync.js`: LRC timestamp
-  formatting/parsing (including the centisecond rounding carry-over fix, e.g.
-  59.999s must round to `[01:00.00]`, not a malformed `[00:59.100]`),
-  word-level segment timestamp refinement (`refineSegmentTimestamps` — the
-  core of the karaoke sync accuracy improvement), and the live "歌詞偏移"
-  offset shift.
-- `youtube-search.test.js` — covers `server/lib/youtube-search.js`: parsing
-  yt-dlp's `--dump-json` search output, thumbnail selection, and
-  query-building/error-handling, using an injectable `execFile` mock so no
-  real `yt-dlp`/network calls are made.
-- `song-queue.test.js` — covers the catalog-writing helpers added for the
-  search/import feature (`addSongToCatalog`, `updateSongOffset`) and KTV queue
-  lifecycle (`dequeue`, `endSong`, `skip`), including the invariant that a
-  second Play cannot replace an active song. Uses an isolated temp catalog file
-  per test via `OURT_SONGS_CATALOG_PATH` so it never touches the real
-  `songs/index.json`.
+  enum) and the live model-fetch/cache/fallback logic for OpenAI Realtime and
+  Gemini, using an injectable `fetch` mock so no real network calls are made.
+  Also confirms no text-model fetcher is exported (lite has no
+  text-generation providers).
 - `build-expiry.test.js` — covers the local-time expiry boundary for packaged
   Electron builds and the bounded recheck interval used to close an App that
   remains open until expiry.
-- `song-storage.test.js` — covers first-launch seeding of packaged songs into
-  the writable runtime songs directory and preservation of imported media on
-  later launches.
-- `voice-import-guard.test.js` — covers `server/lib/voice-import-guard.js`:
-  the per-server-run cap on voice-triggered song imports (default 5), so a
-  repeated voice request can't spend unlimited yt-dlp/Whisper time during a
-  live show. Module-level counter, reset via `resetGuard()` between tests.
 - `reconnect-retry.test.js` — covers bounded retries for an unexpected current
   Gemini disconnect, while excluding stale, manually stopped, and exhausted
   sessions.
-- `lyrics-variant.test.js` — covers generated-lyrics validation and effective
-  variant precedence: live override, persisted generated variant, then original.
-- `stage-script.test.js` — covers zh-TW script line wrapping, page boundaries,
-  and previous/next navigation clamping for Projection reading mode.
+- `lite-bugs.test.js` — regression tests for three connection-reliability
+  fixes made when trimming down to lite:
+  - **14.3** — a Gemini provider error must also broadcast `ai.done`, or
+    Projection/Monitor get stuck showing "thinking"/"speaking" forever.
+  - **14.5** — the bus must never forward `session.update` to a realtime
+    WebSocket that isn't `OPEN` (guards against sending to a `CLOSING` socket).
+  - **14.6** — a manual `開始/連線` click must reset the reconnect-attempt
+    counter to zero, or a session that already exhausted its automatic retry
+    budget can never successfully reconnect again until the app restarts.
 
 ## What's intentionally NOT covered here
 
 Anything that requires a live WebSocket, a real provider API key, an actual
-Electron window, physical audio hardware, or a real `yt-dlp`/Whisper call is
-out of scope for unit tests — see `tests/manual/app1-realtime.md` for
-realtime/interrupt/audio verification and `tests/manual/app3-ktv.md` for KTV
-song search, import, and lyric-offset verification against real YouTube URLs
-and audio playback.
+Electron window, or physical audio hardware is out of scope for unit tests —
+see `tests/manual/app1-realtime.md` for realtime/interrupt/audio verification.
 
 ## Coverage expectations
 

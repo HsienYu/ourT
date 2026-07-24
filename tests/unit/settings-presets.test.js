@@ -26,16 +26,30 @@ function freshSettingsModule(initialSettings) {
   return require(modulePath);
 }
 
-test('settings — removes legacy unused Node YOLO fields and ignores future YOLO patches', () => {
-  const settings = freshSettingsModule({ yolo: { confidence: 0.1, fpsTarget: 5 } });
-  assert.equal('yolo' in settings.getSettings(), false);
-  settings.updateSettings({ yolo: { confidence: 0.9 } });
-  assert.equal('yolo' in settings.getSettings(), false);
+test('settings — removes stale KTV/aiFeatures/YOLO fields from older settings files (lite)', () => {
+  const settings = freshSettingsModule({
+    yolo: { confidence: 0.1, fpsTarget: 5 },
+    ktv: { autoRewrite: true },
+    aiFeatures: { voiceLengthControl: true },
+  });
+  const loaded = settings.getSettings();
+  assert.equal('yolo' in loaded, false);
+  assert.equal('ktv' in loaded, false);
+  assert.equal('aiFeatures' in loaded, false);
+  settings.updateSettings({ yolo: { confidence: 0.9 }, ktv: { autoRewrite: false } });
+  const reloaded = settings.getSettings();
+  assert.equal('yolo' in reloaded, false);
+  assert.equal('ktv' in reloaded, false);
 });
 
-test('settings — migrates retired Gemini text model to the current default', () => {
-  const settings = freshSettingsModule({ models: { gemini: 'gemini-2.5-flash' } });
-  assert.equal(settings.getSettings().models.gemini, 'gemini-3.5-flash');
+test('settings — lite defaults expose only realtime-voice providers and models', () => {
+  const settings = freshSettingsModule();
+  const loaded = settings.getSettings();
+  assert.deepEqual(Object.keys(loaded.providers), ['realtimeVoice']);
+  assert.deepEqual(Object.keys(loaded.keys).sort(), ['gemini', 'openai']);
+  for (const removedKey of ['claude', 'groq', 'mistral', 'anthropic']) {
+    assert.equal(removedKey in loaded.keys, false);
+  }
 });
 
 test('getPresets — empty by default', () => {
@@ -93,20 +107,14 @@ test('savePreset — persists across a reload of the settings cache', () => {
   settings.savePreset({ name: '持久化測試', voice: 'marin' });
   // Force a fresh load from disk by clearing the module's internal cache via
   // a settings update (updateSettings already invalidates settingsCache).
-  settings.updateSettings({ ktv: { autoRewrite: false } });
+  settings.updateSettings({ providers: { realtimeVoice: 'openai' } });
   const list = settings.getPresets();
   assert.equal(list.length, 1);
   assert.equal(list[0].name, '持久化測試');
 });
 
-test('savePreset — preserves concise-information mode across overwrite and reload', () => {
+test('savePreset — no longer persists conciseInformationMode (removed in lite)', () => {
   const settings = freshSettingsModule();
-  const [created] = settings.savePreset({ name: '資訊整理', conciseInformationMode: true });
-  assert.equal(created.conciseInformationMode, true);
-
-  const [updated] = settings.savePreset({ id: created.id, name: '一般對話', conciseInformationMode: false });
-  assert.equal(updated.conciseInformationMode, false);
-
-  settings.updateSettings({ ktv: { autoRewrite: false } });
-  assert.equal(settings.getPresets()[0].conciseInformationMode, false);
+  const [created] = settings.savePreset({ name: '測試', conciseInformationMode: true });
+  assert.equal('conciseInformationMode' in created, false);
 });

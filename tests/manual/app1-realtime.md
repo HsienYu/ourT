@@ -1,7 +1,12 @@
-# App 1 — AI Realtime Chat: Manual Verification Protocol
+# App 1 — AI Realtime Chat: Manual Verification Protocol (lite)
 
 Perform this checklist before each rehearsal and performance.
 Record results and evidence in the Evidence column.
+
+This is the `lite` branch: KTV/karaoke, stage-script generation, 精簡資訊回覆
+(concise reply mode), and voice-triggered tool calling (response length,
+song search/import) were all removed. Only the AI Realtime conversation
+(OpenAI or Gemini Live) remains, along with manual/voice interrupt.
 
 Pure-logic checks (session payload schemas, reconnect decisions, preset
 CRUD, voice/model catalog correctness) are covered by automated unit tests —
@@ -87,8 +92,6 @@ once with `gemini` — since the expected behavior genuinely differs.
 | Change emotional state to `憤怒` without clicking `更新參數` | Monitor params row updates immediately; log shows an automatic push; session stays connected | |
 | Speak again after either change above | AI response reflects the new state | |
 | Type in `額外指令注入` textarea | Live update fires ~400ms after you stop typing (not on every keystroke); session stays connected | |
-| Enable `精簡資訊回覆`, then ask for a label, summary, or audience observation | Without reconnecting, AI replies in 1–3 short sentences; it does not ask a question, invite a response, or continue the topic | |
-| Disable `精簡資訊回覆`, then ask the same kind of question | Normal open-ended conversational behavior returns | |
 | Change voice (e.g. Marin → Cedar) | Log shows `聲音已變更，需要重新連線才能套用…`; session reconnects (badge briefly drops then returns to `◉ 通話中`) | |
 | Speak again after voice reconnect | New voice is audible | |
 | Click `更新參數` manually | Still works as an explicit immediate push | |
@@ -99,8 +102,7 @@ once with `gemini` — since the expected behavior genuinely differs.
 |---|---|---|
 | With a session active, drag a slider without clicking `更新參數` | Log shows `Gemini Live 無法在連線中更新設定，正在重新連線以套用變更…`; session reconnects (badge drops then returns to `◉ 通話中`) — this is expected, not a bug | |
 | Watch the Electron/server console during the reconnect | `gemini WebSocket closed: 1000` (clean close from our own reconnect) — must NOT be `1007 Request contains an invalid argument` | |
-| Change emotional state / attitude / prompt override | Same reconnect behavior each time | |
-| Enable or disable `精簡資訊回覆` during a session | One clean reconnect occurs; badge returns to `◉ 通話中`. If the provider closes unexpectedly during setup, Control retries up to three times while the session remains requested. After reconnection, information-style requests receive only 1–3 short sentences with no follow-up question | |
+| Change emotional state / attitude / prompt override | Same reconnect behavior each time; badge returns to `◉ 通話中`. If the provider closes unexpectedly during setup, Control retries up to three times while the session remains requested (14.6 fix) | |
 | Drag a slider back and forth quickly (multiple ticks within 400ms) | Only ONE reconnect happens (debounced), not one per tick | |
 | Speak again after any reconnect | AI response reflects the new state | |
 | Change voice | Same reconnect path (no different from any other parameter, since Gemini always reconnects) | |
@@ -117,7 +119,6 @@ browser-only test would not have caught the original bug.
 | Check | Expected | Evidence |
 |---|---|---|
 | Tune voice/attitude/state/sliders, click `+ 儲存目前設定為新預設` | A custom in-page dialog appears (not a native OS prompt) asking for a name | |
-| Save a preset with `精簡資訊回覆` enabled, switch it off, then reload the preset | The checkbox returns to enabled and the next AI instruction update uses concise information behavior | |
 | Type a name and click `確認` | New numbered row appears in `AI 角色預設` list with that name | |
 | Click `+ 儲存目前設定為新預設` again and click `取消` instead | No new preset is created | |
 | Change several params away from the saved preset, then click the preset's load button | All params/voice snap back to the saved combination; live update fires (always reconnects on Gemini, or if voice differs on OpenAI) | |
@@ -140,28 +141,11 @@ browser-only test would not have caught the original bug.
 
 ---
 
-## 5e. Text-Model Dropdowns and Song-Analysis Prompt Override
-
-New model pickers for the text-generation providers (distinct from the
-Realtime/Live voice models above), plus an operator-configurable override for
-the KTV song-analysis system prompt.
-
-| Check | Expected | Evidence |
-|---|---|---|
-| Open `系統設定`, look at `Claude 文字模型` / `Groq 文字模型` / `Mistral 文字模型` / `OpenAI 文字模型` | Each is populated (static lists), no duplicate entries in any dropdown | |
-| Change one, save, reload `/control` | The saved value persists | |
-| Leave `歌曲分析自訂提示` empty, trigger 他點這首歌有什麼樣的傾向？ from `/audience` | Analysis uses the original built-in prompt (still coherent, ~100 字以內) | |
-| Enter a custom prompt in `歌曲分析自訂提示`, save, trigger analysis again | Analysis visibly reflects the custom prompt's instructions | |
-| Clear the custom prompt, save | Analysis reverts to the built-in default | |
-
----
-
 ## 5f. RAG Context (Taiwan LGBT Movement History)
 
-`server/rag/taiwan-lgbt-history.md` is now included in the Realtime AI
-conversation's instructions (previously RAG only reached lyrics
-rewrite/song analysis) — verify it's actually reachable and used
-appropriately, not just present in the file.
+`server/rag/taiwan-lgbt-history.md` is included in the Realtime AI
+conversation's instructions via `GET /api/rag/context` — verify it's
+actually reachable and used appropriately, not just present in the file.
 
 | Check | Expected | Evidence |
 |---|---|---|
@@ -175,8 +159,8 @@ appropriately, not just present in the file.
 ## 5g. Short-Term Memory Across Reconnects
 
 Bounded (~4 exchanges) conversation memory, sent with every `session.start`
-so a reconnect (Gemini parameter change, OpenAI voice change, or KTV
-pause/resume — see 5h below) doesn't start the conversation cold.
+so a reconnect (Gemini parameter change or OpenAI voice change) doesn't
+start the conversation cold.
 
 | Check | Expected | Evidence |
 |---|---|---|
@@ -185,61 +169,6 @@ pause/resume — see 5h below) doesn't start the conversation cold.
 | With OpenAI, change a parameter that does NOT reconnect (e.g. attitude) | Conversation continues normally (no seeding needed — same live connection) | |
 | Tap 結束 (`endSessionManually`), then 開始 / 連線 again | AI does NOT remember the prior conversation — memory is intentionally cleared on an explicit operator stop | |
 | Have a long exchange (10+ turns), then trigger a reconnect | Only the most recent ~4 exchanges are seeded, not the entire conversation (bounded, "short" memory by design) | |
-
----
-
-## 5h. KTV / AI Mutual Exclusion
-
-While a song plays, the AI conversation should be silent — verify this is
-now automatic in both directions.
-
-| Check | Expected | Evidence |
-|---|---|---|
-| Start an AI session, then play a KTV song (播放 / 播放此歌 from `/control`) | AI session automatically closes (mic, output audio, and the Realtime connection all stop) — Control log shows `KTV 開始播放，AI 對話暫停` | |
-| Let the song play to the end | AI session automatically reconnects — Control log shows `KTV 播放結束，AI 對話自動重新連線` | |
-| While a song is playing, tap 切歌 to skip directly to another queued song | AI does NOT reconnect between the two songs — it was already disconnected and stays disconnected through the skip | |
-| Skip to an empty queue (切歌 with nothing queued next) | AI reconnects once, exactly as if the first song had ended naturally | |
-| Manually tap 結束 (`endSessionManually`) with no KTV involved, then play a song later | No spurious auto-reconnect happens when the song ends — the pause-tracking flag is only set by KTV-triggered disconnects, not manual ones | |
-
----
-
-## 5i. Voice-Triggered Response Length (`set_response_length`)
-
-Generalizes the `精簡資訊回覆` checkbox into something the performer can also
-trigger by voice — requires `AI 對話功能開關 → 語音調整回應長度` enabled and a
-session restart after enabling it (tool declarations are connect-time-only).
-
-| Check | Expected | Evidence |
-|---|---|---|
-| Enable the toggle, save, restart the session | No visible error; session connects normally | |
-| Mid-conversation, say something like "可以簡短一點嗎" / "不要講太久" | AI's next replies become noticeably shorter (1-3 sentences), without you touching the `精簡資訊回覆` checkbox | |
-| Watch the checkbox during this | It updates to checked automatically, and the Control log shows `AI 語音要求調整回應長度：concise` | |
-| On OpenAI | The change applies without any visible reconnect | |
-| On Gemini | One reconnect occurs, then the shorter behavior takes effect | |
-| Say "可以多說一點嗎" / "詳細一點" | AI gives longer, more detailed responses (`expanded`); checkbox unchecks (checkbox only represents concise vs not) | |
-| Say something like "恢復正常" / "普通就好" | Behavior returns to normal-length responses (`normal`) | |
-| Trigger the change repeatedly (concise → expanded → concise) in one session | Instructions do not visibly accumulate duplicated/conflicting rules — only the latest requested length applies | |
-| Disable the toggle, restart the session, try the same voice request | AI does not call the tool at all (no tool was declared this session) | |
-
----
-
-## 5j. Voice-Triggered Song Search + Import
-
-Requires `AI 對話功能開關 → 語音搜尋並下載歌曲` enabled (default OFF) and a
-session restart after enabling it. This starts real `yt-dlp`/Whisper work —
-run it against real network access.
-
-| Check | Expected | Evidence |
-|---|---|---|
-| With the toggle OFF, ask the AI to find a song | AI does not attempt to search (tool not available this session) | |
-| Enable the toggle, restart the session, ask "幫我找一首周杰倫的稻香" | Within a few seconds, AI reads back 1-2 candidate results (title/channel) | |
-| Say something ambiguous instead of confirming (e.g. change topic) | AI does NOT start downloading without a clear confirmation | |
-| Confirm a specific result (e.g. "對，就是這個" / "第一個") | AI acknowledges it started downloading (~1 minute), conversation continues normally in the meantime | |
-| Wait ~30-90s | AI naturally mentions the download finished, without you asking again — confirms the completion announcement arrived | |
-| Check `/control`'s 控制台選歌 or `/audience` | The new song appears in the catalog | |
-| Confirm it was NOT auto-queued | It does not appear in the KTV queue until an operator manually adds it | |
-| Repeat a full voice-triggered import 5 times in one server run, then request a 6th | The 6th request is refused (AI relays that the limit was reached); `/control`'s manual search+import is unaffected by this cap | |
-| Restart the server, try again | The cap resets — the count is per server run/performance, not persisted forever | |
 
 ---
 

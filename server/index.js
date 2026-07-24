@@ -1,42 +1,27 @@
 /**
- * server/index.js  — ourT Theatre Performance Server
+ * server/index.js  — ourT Theatre Performance Server (lite)
  *
- * Serves four browser clients over local WiFi:
- *   /control    — operator control panel (mobile)
- *   /projection — shared projection screen (AI text + KTV)
+ * Serves three browser clients over local WiFi:
+ *   /control    — operator control panel
+ *   /projection — AI transcript projection screen
  *   /monitor    — performer stage monitor
- *   /audience   — audience song request page (phone)
  *
  * WebSocket paths:
  *   /ws/realtime  — AI Realtime proxy (OpenAI or Gemini Live)
- *   /ws/bus       — broadcast bus (projection + control + monitor + audience)
+ *   /ws/bus       — broadcast bus (projection + control + monitor)
  *
  * REST endpoints:
- *   GET  /api/weather           — current Chiayi weather
- *   GET  /api/songs             — song catalog
- *   GET  /api/queue             — current KTV queue
- *   POST /api/queue/enqueue     — { songId, requesterLabel }
- *   POST /api/queue/play        — dequeue and tell projection to play
- *   POST /api/queue/end         — current song ended
- *   POST /api/queue/clear       — clear the queue
- *   GET  /api/songs/:id/lyrics?variant=...  — serve .lrc file
- *   GET  /api/songs/:id/lyrics/variants     — list available variants
- *   POST /api/songs/:id/lyrics/override     — live override lyrics
- *   DELETE /api/songs/:id/lyrics/override   — clear override
- *   POST /api/songs/:id/lyrics/generate     — LLM rewrite
- *   GET  /api/songs/:id/audio               — audio file
- *   GET  /api/songs/:id/cover               — cover art
- *   PATCH /api/songs/:id/offset             — { lrcOffset } live rehearsal sync tuning
- *   GET  /api/songs/search?q=...            — YouTube search (yt-dlp, no API key)
- *   POST /api/songs/import                  — { videoId, title, artist, tags } start async import
- *   GET  /api/songs/import/:jobId           — poll import job status
- *   POST /api/ktv/analyze       — AI song analysis
- *   POST /api/ktv/analyze-trigger — audience triggers analysis
- *   GET  /api/settings          — get all settings (keys masked)
- *   POST /api/settings          — update settings
- *   GET  /api/settings/providers — available providers with key status
- *   GET  /api/settings/models?provider=... — models for provider
- *   GET  /api/settings/gemini-voices — Gemini Live voices
+ *   GET  /api/weather               — current Chiayi weather
+ *   GET  /api/rag/context           — RAG context for AI instructions
+ *   GET  /api/settings              — get all settings (keys masked)
+ *   POST /api/settings              — update settings
+ *   GET  /api/settings/providers    — available providers with key status
+ *   GET  /api/settings/models?provider=... — account-visible model list
+ *   GET  /api/settings/openai-voices — OpenAI Realtime voice catalog
+ *   GET  /api/settings/gemini-voices — Gemini Live voice catalog
+ *   GET  /api/presets               — character presets
+ *   POST /api/presets               — save / overwrite preset
+ *   DELETE /api/presets/:id         — delete preset
  */
 
 'use strict';
@@ -49,24 +34,12 @@ const WebSocket = require('ws');
 
 const { handleRealtimeClient } = require('./lib/realtime-proxy');
 const { getWeather, formatForPrompt } = require('./lib/weather');
-const songQueue = require('./lib/song-queue');
 const settingsLib = require('./lib/settings');
-const aiProviders = require('./lib/ai-providers');
 const providerCatalog = require('./lib/provider-catalog');
-const youtubeSearch = require('./lib/youtube-search');
-const songImporter = require('./lib/song-importer');
-const { getSongsDir } = require('./lib/song-storage');
-const { effectiveLyricsVariant, validateRewriteLrc } = require('./lib/lyrics-variant');
-const { paginateStageScript, navigateStageScript, validateStageScriptConfig, buildStageScriptPayload, setStageScriptVisibility } = require('./lib/stage-script');
 
 const PORT = process.env.PORT || 3000;
-const SONGS_DIR = getSongsDir();
-const LYRICS_DIR = path.join(SONGS_DIR, 'lyrics');
-const AUDIO_DIR = path.join(SONGS_DIR, 'audio');
-const COVERS_DIR = path.join(SONGS_DIR, 'covers');
-let stageScriptState = { text: '', page: 0, visible: false, actorCount: 2, systemIsActor: false };
 
-// ── Express app ─────────────────────────────────────────────────────────────
+// ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -77,137 +50,14 @@ app.get('/projection', (req, res) =>
   res.sendFile(path.join(__dirname, 'public/projection/index.html')));
 app.get('/monitor', (req, res) =>
   res.sendFile(path.join(__dirname, 'public/monitor/index.html')));
-app.get('/audience', (req, res) =>
-  res.sendFile(path.join(__dirname, 'public/audience/index.html')));
 
-// ── REST API ─────────────────────────────────────────────────────────────────
+// ── REST API ──────────────────────────────────────────────────────────────────
 app.get('/api/weather', async (req, res) => {
   const w = await getWeather();
   res.json({ ...w, prompt: formatForPrompt(w) });
 });
 
-app.get('/api/songs', (req, res) => {
-  res.json(songQueue.getCatalog());
-});
-
-app.get('/api/queue', (req, res) => {
-  res.json(songQueue.getQueue());
-});
-
-app.post('/api/queue/enqueue', (req, res) => {
-  const { songId, requesterLabel } = req.body;
-  const result = songQueue.enqueue(songId, requesterLabel);
-  res.json(result);
-
-  // Auto-rewrite lyrics in background when song is queued
-  const settings = settingsLib.getSettings();
-  if (result.ok && settings.ktv.autoRewrite) {
-    if (Object.values(settings.keys).some(Boolean)) {
-      const variant = settings.ktv.defaultVariant || 'gender-swap';
-      generateLyricsLLM(songId, variant, null).catch((err) => {
-        console.error(`[lyrics] Auto-rewrite failed for ${songId}: ${err.message}`);
-      });
-    }
-  }
-});
-
-app.post('/api/queue/play', (req, res) => {
-  if (songQueue.getQueue().nowPlaying) {
-    return res.status(409).json({ ok: false, error: '已有歌曲正在播放，請使用切歌或等待歌曲結束' });
-  }
-  stageScriptState = { ...stageScriptState, visible: false };
-  broadcast.toProjection({ type: 'stage_script.hide' });
-  const item = songQueue.dequeue();
-  if (!item) return res.status(400).json({ ok: false, error: '佇列為空' });
-  // projectionConnected is informational — the client shows a warning if false,
-  // but play proceeds either way because the reconnect handler replays ktv.play
-  // when projection later connects (see bus connection handler below).
-  const projectionConnected = hasBusClient('projection');
-  return res.json({ ok: true, item, projectionConnected });
-});
-
-app.post('/api/queue/end', (req, res) => {
-  const item = songQueue.endSong();
-  res.json({ ok: true, item });
-});
-
-app.post('/api/queue/skip', (req, res) => {
-  const result = songQueue.skip();
-  res.json({ ok: !!result, ...result });
-});
-
-app.post('/api/queue/clear', (req, res) => {
-  songQueue.clearQueue();
-  res.json({ ok: true });
-});
-
-// ── Lyrics variant system ─────────────────────────────────────────────────────
-const lyricsOverrides = new Map(); // songId → { variant, lrcText }
-
-// GET /api/songs/:id/lyrics?variant=original|gender-swap|emotional|distorted|live
-app.get('/api/songs/:id/lyrics', (req, res) => {
-  const songId = req.params.id;
-  const variant = req.query.variant || 'original';
-
-  const override = lyricsOverrides.get(songId);
-  if (variant === 'live' && override) {
-    res.type('text/plain').send(override.lrcText);
-    return;
-  }
-
-  const lrcFile = variant === 'original'
-    ? `${songId}.lrc`
-    : `${songId}.${variant}.lrc`;
-  const lrcPath = path.join(LYRICS_DIR, lrcFile);
-
-  res.sendFile(lrcPath, (err) => {
-    if (err && !res.headersSent) res.status(404).json({ error: `lyrics variant not found: ${variant}` });
-  });
-});
-
-app.get('/api/songs/:id/lyrics/variants', (req, res) => {
-  const songId = req.params.id;
-  const lyricsDir = LYRICS_DIR;
-  const KNOWN_VARIANTS = ['original', 'gender-swap', 'emotional', 'distorted'];
-  const available = [];
-
-  for (const v of KNOWN_VARIANTS) {
-    const file = v === 'original' ? `${songId}.lrc` : `${songId}.${v}.lrc`;
-    if (require('fs').existsSync(path.join(lyricsDir, file))) {
-      available.push(v);
-    }
-  }
-
-  const override = lyricsOverrides.get(songId);
-  if (override) available.push('live');
-
-  const song = songQueue.getCatalog().find((entry) => entry.id === songId);
-  res.json({ songId, variants: available, activeVariant: effectiveLyricsVariant(song || {}, !!override) });
-});
-
-// POST /api/songs/:id/lyrics/override — live override (operator edits mid-show)
-app.post('/api/songs/:id/lyrics/override', (req, res) => {
-  const { lrcText, variant } = req.body;
-  if (!lrcText) return res.status(400).json({ error: 'lrcText required' });
-  lyricsOverrides.set(req.params.id, { lrcText, variant: variant || 'live' });
-  broadcast.toProjection({
-    type: 'ktv.lyrics.override',
-    songId: req.params.id,
-    lrcText,
-    variant: variant || 'live',
-  });
-  res.json({ ok: true });
-});
-
-app.delete('/api/songs/:id/lyrics/override', (req, res) => {
-  lyricsOverrides.delete(req.params.id);
-  const song = songQueue.getCatalog().find((entry) => entry.id === req.params.id);
-  const variant = effectiveLyricsVariant(song || {}, false);
-  broadcast.toProjection({ type: 'ktv.lyrics.override.cleared', songId: req.params.id, variant });
-  res.json({ ok: true, variant });
-});
-
-// ── RAG context loader ────────────────────────────────────────────────────────
+// RAG context for the AI Realtime conversation (server/rag/*.md)
 function loadRagContext() {
   const ragPath = path.join(__dirname, 'rag');
   try {
@@ -220,264 +70,13 @@ function loadRagContext() {
   }
 }
 
-// Exposes the same RAG context already used by lyrics rewrite/song analysis
-// to the AI Realtime dialogue (server/public/control/index.html's
-// buildInstructions() — a client-side function with no other way to reach
-// server/rag/*.md).
 app.get('/api/rag/context', (req, res) => {
   res.type('text/plain').send(loadRagContext());
 });
 
-function stageScriptPayload() {
-  return { type: 'stage_script.state', ...buildStageScriptPayload(stageScriptState), actorCount: stageScriptState.actorCount, systemIsActor: stageScriptState.systemIsActor };
-}
-
-app.post('/api/stage-script/generate', async (req, res) => {
-  const direction = typeof req.body.prompt === 'string' ? req.body.prompt.trim().slice(0, 1200) : '';
-  let cast;
-  try {
-    cast = validateStageScriptConfig(req.body);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-  const ragContext = loadRagContext();
-  const roleRule = cast.systemIsActor
-    ? `角色總數為 ${cast.actorCount} 人，必須包含「系統」與另外 ${cast.humanActorCount} 位具名角色。`
-    : `角色總數為 ${cast.actorCount} 人，使用 ${cast.actorCount} 位具名角色；「系統」不可說話。`;
-  const system = `${ragContext ? `【演出概念背景】\n${ragContext}\n\n` : ''}你是一位臺灣當代劇場編劇。寫一段至少 1000 個可見中文字的舞台劇腳本。${roleRule} 使用角色名稱加冒號的多行對話，穿插簡短的【舞台指示】。保持可投影閱讀的短行，避免 Markdown、標題、說明或任何前言。`;
-  try {
-    const result = await aiProviders.generateText({
-      task: 'lyricsRewrite',
-      system,
-      prompt: direction || '請依照演出概念創作一段可供現場演員朗讀的舞台劇對話。',
-      options: { maxTokens: 3000 },
-    });
-    let text = result.text.trim();
-    if (Array.from(text.replace(/\s/g, '')).length < 1000) {
-      const continuation = await aiProviders.generateText({
-        task: 'lyricsRewrite', system,
-        prompt: `請接續下列劇本，只輸出新的後續對話，直到合併後至少有 1000 個可見中文字。\n\n${text}`,
-        options: { maxTokens: 3000 },
-      });
-      text = `${text}\n${continuation.text.trim()}`;
-    }
-    const characterCount = Array.from(text.replace(/\s/g, '')).length;
-    if (characterCount < 1000) throw new Error(`劇本長度不足（${characterCount} 字），請重新產生`);
-    stageScriptState = { text, page: 0, visible: false, ...cast };
-    res.json({ ok: true, ...stageScriptPayload(), characterCount, provider: result.provider, model: result.model });
-  } catch (err) {
-    console.error('[stage-script] generation failed:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/stage-script/navigate', (req, res) => {
-  if (!stageScriptState.text) return res.status(400).json({ error: '尚未產生舞台劇本' });
-  const action = req.body.action;
-  if (!['previous', 'next'].includes(action)) return res.status(400).json({ error: 'invalid navigation action' });
-  const pageCount = paginateStageScript(stageScriptState.text).length;
-  stageScriptState = { ...stageScriptState, page: navigateStageScript(stageScriptState.page, pageCount, action) };
-  if (stageScriptState.visible) broadcast.toProjection(stageScriptPayload());
-  res.json({ ok: true, ...stageScriptPayload() });
-});
-
-app.post('/api/stage-script/show', (req, res) => {
-  if (!stageScriptState.text) return res.status(400).json({ error: '尚未產生舞台劇本' });
-  stageScriptState = setStageScriptVisibility(stageScriptState, true);
-  broadcast.toProjection(stageScriptPayload());
-  res.json({ ok: true, ...stageScriptPayload() });
-});
-
-app.post('/api/stage-script/close', (req, res) => {
-  stageScriptState = setStageScriptVisibility(stageScriptState, false);
-  broadcast.toProjection({ type: 'stage_script.hide' });
-  res.json({ ok: true });
-});
-
-// ── Shared LLM lyrics generation (uses ai-providers abstraction) ──────────────
-const VARIANT_PROMPTS = {
-  'gender-swap': `你是一位繁體中文歌詞改編者。根據演出概念背景，將歌詞中的性別詞語進行流動性互換（他↔她↔TA、男↔女、哥↔姐等）。保持 LRC 時間戳記格式和音節數不變（±2字）。只輸出 LRC 內容，不要任何說明。`,
-  'emotional':   `你是一位繁體中文詩人。根據演出概念背景，將歌詞情緒放大強化，使用更具身體感、脆弱感或衝擊力的語言。保持音節數（±2字）。保持 LRC 時間戳記格式不變。只輸出 LRC 內容，不要任何說明。`,
-  'distorted':   `你是一位超現實主義繁體中文詩人。根據演出概念背景，將歌詞進行詩意扭曲與異化，打破語義邏輯，引入陌生意象，解構性別與身份預設。保持 LRC 時間戳記格式不變。只輸出 LRC 內容，不要任何說明。`,
-};
-
-async function generateLyricsLLM(songId, variant, customPrompt) {
-  const catalog = songQueue.getCatalog();
-  const song = catalog.find((s) => s.id === songId);
-  if (!song) throw new Error('song not found');
-
-  let originalLrc;
-  try {
-    originalLrc = fs.readFileSync(path.join(LYRICS_DIR, `${songId}.lrc`), 'utf8');
-  } catch {
-    throw new Error('original lyrics not found');
-  }
-
-  const ragContext = loadRagContext();
-  const variantPrompt = VARIANT_PROMPTS[variant];
-  if (!variantPrompt) throw new Error(`unsupported lyrics variant: ${variant}`);
-  const customRule = customPrompt ? `\n\n額外改寫指令：${customPrompt}` : '';
-  const systemPrompt = ragContext
-    ? `【演出概念背景】\n${ragContext}\n\n${variantPrompt}${customRule}`
-    : `${variantPrompt}${customRule}`;
-
-  const result = await aiProviders.generateText({
-    task: 'lyricsRewrite',
-    system: systemPrompt,
-    prompt: `歌曲：《${song.title}》 ${song.artist}\n\n${originalLrc}`,
-    options: { maxTokens: 2048 },
-  });
-  const parsedLines = validateRewriteLrc(originalLrc, result.text);
-
-  // Save to file and set as live override
-  const outPath = path.join(LYRICS_DIR, `${songId}.${variant}.lrc`);
-  fs.writeFileSync(outPath, result.text, 'utf8');
-  lyricsOverrides.delete(songId);
-  const updatedSong = songQueue.updateSongLyricsVariant(songId, variant);
-
-  broadcast.toProjection({
-    type: 'ktv.lyrics.override',
-    songId,
-    lrcText: result.text,
-    variant,
-  });
-
-  console.log(`[lyrics] Generated variant '${variant}' for song '${songId}'`);
-  return { text: result.text, variant, song: updatedSong, provider: result.provider, model: result.model, lineCount: parsedLines.length };
-}
-
-// POST /api/songs/:id/lyrics/generate — trigger live LLM rewrite
-app.post('/api/songs/:id/lyrics/generate', async (req, res) => {
-  const variant = req.body.variant || 'gender-swap';
-  const customPrompt = req.body.customPrompt;
-  try {
-    const result = await generateLyricsLLM(req.params.id, variant, customPrompt);
-    res.json({ ok: true, lrcText: result.text, variant: result.variant, provider: result.provider, model: result.model, lineCount: result.lineCount });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// KTV AI analysis (uses ai-providers abstraction)
-app.post('/api/ktv/analyze', async (req, res) => {
-  const { item } = req.body;
-  if (!item || !item.song) return res.status(400).json({ error: 'missing item' });
-
-  const { title, artist } = item.song;
-  const defaultPrompt =
-    `一位觀眾在劇場表演現場點了《${title}》（${artist}）。\n` +
-    `請根據這首歌的情感色彩、歌詞主題（若你知道的話）、以及這首歌在台灣流行文化中的意涵，` +
-    `分析這位觀眾可能的心理狀態、情感傾向、或性別文化認同線索。\n` +
-    `回答用繁體中文，100 字以內，語氣像在旁白，不要條列式。`;
-  // Operator-configured override (server/lib/settings.js: ktv.songAnalysisPrompt),
-  // set via /control's 系統設定. Falls back to the default prompt when empty.
-  const customPrompt = settingsLib.getSettings(false).ktv.songAnalysisPrompt;
-  const prompt = customPrompt ? `${customPrompt}\n\n歌曲：《${title}》（${artist}）` : defaultPrompt;
-
-  try {
-    const { text } = await aiProviders.generateText({
-      task: 'songAnalysis',
-      system: prompt,
-      prompt: `歌曲：《${title}》 ${artist}`,
-      options: { maxTokens: 300 },
-    });
-    res.json({ analysis: text });
-  } catch (err) {
-    console.error('[ktv/analyze] AI error:', err.message);
-    res.json({ analysis: '（分析失敗：' + err.message + '）' });
-  }
-});
-
-// Audience phone triggers analysis on projection via bus
-app.post('/api/ktv/analyze-trigger', (req, res) => {
-  const { item } = req.body;
-  if (!item) return res.status(400).json({ error: 'missing item' });
-  broadcast.toProjection({ type: 'ktv.analyze', item });
-  res.json({ ok: true });
-});
-
-// Serve cover art
-app.get('/api/songs/:id/cover', (req, res) => {
-  const ext = req.query.ext || 'jpg';
-  const coverPath = path.join(COVERS_DIR, `${req.params.id}.${ext}`);
-  res.sendFile(coverPath, (err) => {
-    if (err) res.status(404).json({ error: 'cover not found' });
-  });
-});
-
-// Serve audio files
-app.get('/api/songs/:id/audio', (req, res) => {
-  const ext = req.query.ext || 'mp3';
-  const audioPath = path.join(AUDIO_DIR, `${req.params.id}.${ext}`);
-  res.sendFile(audioPath, (err) => {
-    if (err) res.status(404).json({ error: 'audio not found' });
-  });
-});
-
-// Live rehearsal lyric-offset tuning — shifts the whole song's LRC timing
-// without re-importing. Used by the "歌詞偏移" slider in /control. Broadcasts
-// so the projection screen applies the new offset immediately if that song
-// is currently playing.
-app.patch('/api/songs/:id/offset', (req, res) => {
-  const { lrcOffset } = req.body;
-  if (typeof lrcOffset !== 'number' || !Number.isFinite(lrcOffset)) {
-    return res.status(400).json({ error: 'lrcOffset must be a finite number (seconds)' });
-  }
-  const song = songQueue.updateSongOffset(req.params.id, lrcOffset);
-  if (!song) return res.status(404).json({ error: 'song not found' });
-  broadcast.toProjection({ type: 'ktv.offset.update', songId: req.params.id, lrcOffset });
-  res.json({ ok: true, song });
-});
-
-// ── YouTube search + import (no API key — uses yt-dlp's ytsearch) ─────────────
-app.get('/api/songs/search', async (req, res) => {
-  const q = req.query.q;
-  if (!q || !q.trim()) return res.status(400).json({ error: 'q query param required' });
-  try {
-    const results = await youtubeSearch.searchYoutube(q, 6);
-    res.json(results);
-  } catch (err) {
-    console.error('[songs/search] yt-dlp search failed:', err.message);
-    res.status(502).json({ error: err.message });
-  }
-});
-
-// In-memory import job tracking. Download + transcription can take 30-90s,
-// so import runs in the background and the client polls for status.
-const importJobs = new Map(); // jobId -> { status: 'running'|'done'|'error', message, songId? }
-
-app.post('/api/songs/import', (req, res) => {
-  const { videoId, title, artist, tags } = req.body;
-  if (!videoId) return res.status(400).json({ error: 'videoId required' });
-
-  const jobId = `import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  importJobs.set(jobId, { status: 'running', message: '準備中…' });
-  res.json({ jobId });
-
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
-  songImporter.importSong({
-    url,
-    title,
-    artist,
-    tags: Array.isArray(tags) ? tags : [],
-    onProgress: (message) => importJobs.set(jobId, { status: 'running', message }),
-  }).then((result) => {
-    importJobs.set(jobId, { status: 'done', message: '完成', songId: result.id });
-  }).catch((err) => {
-    console.error('[songs/import] failed:', err.message);
-    importJobs.set(jobId, { status: 'error', message: err.message });
-  });
-});
-
-app.get('/api/songs/import/:jobId', (req, res) => {
-  const job = importJobs.get(req.params.jobId);
-  if (!job) return res.status(404).json({ error: 'job not found' });
-  res.json(job);
-});
-
-// ── Settings REST API ────────────────────────────────────────────────────────
+// ── Settings REST API ─────────────────────────────────────────────────────────
 app.get('/api/settings', (req, res) => {
-  res.json(settingsLib.getSettings(true)); // mask keys
+  res.json(settingsLib.getSettings(true));
 });
 
 app.post('/api/settings', (req, res) => {
@@ -494,8 +93,7 @@ app.get('/api/settings/providers', (req, res) => {
   res.json(settingsLib.getProviderOptions());
 });
 
-// Account-visible model lists are fetched from each provider with a safe
-// fallback when no key, a provider outage, or an account restriction occurs.
+// Account-visible model lists (OpenAI Realtime and Gemini only in lite)
 app.get('/api/settings/models', async (req, res) => {
   const provider = req.query.provider;
   if (!provider) return res.status(400).json({ error: 'provider query required' });
@@ -510,17 +108,13 @@ app.get('/api/settings/models', async (req, res) => {
     if (provider === 'geminiLive') {
       return res.json({ models: await providerCatalog.fetchGeminiModels(settings.keys.gemini, 'live'), source: 'live' });
     }
-    const textProvider = provider === 'openaiText' ? 'openai' : provider;
-    const keyName = textProvider === 'claude' ? 'anthropic' : textProvider;
-    return res.json(await providerCatalog.fetchTextModels(textProvider, settings.keys[keyName]));
+    return res.status(400).json({ error: `unknown provider: ${provider}` });
   } catch (err) {
     console.error('[settings/models] fetch failed:', err.message);
-    res.json({ models: settingsLib.getModelsForProvider(provider), source: 'fallback', warning: '無法取得即時模型清單' });
+    res.json({ models: [], source: 'fallback', warning: '無法取得即時模型清單' });
   }
 });
 
-// Voice catalogs: neither provider exposes a live "list voices" API — these
-// are the full, current, accurate static catalogs from provider-catalog.js.
 app.get('/api/settings/openai-voices', (req, res) => {
   res.json(providerCatalog.OPENAI_REALTIME_VOICES);
 });
@@ -529,7 +123,7 @@ app.get('/api/settings/gemini-voices', (req, res) => {
   res.json(providerCatalog.GEMINI_LIVE_VOICES);
 });
 
-// ── Character presets ─────────────────────────────────────────────────────
+// ── Character presets ─────────────────────────────────────────────────────────
 app.get('/api/presets', (req, res) => {
   res.json(settingsLib.getPresets());
 });
@@ -555,7 +149,7 @@ const server = http.createServer(app);
 const wssBus = new WebSocket.Server({ noServer: true });
 const wssRealtime = new WebSocket.Server({ noServer: true });
 
-const busClients = new Map(); // ws → { role: 'projection'|'control'|'audience'|'monitor' }
+const busClients = new Map(); // ws → { role }
 let activeRealtimeWs = null;
 
 function hasBusClient(role) {
@@ -565,7 +159,6 @@ function hasBusClient(role) {
   return false;
 }
 
-// Broadcast bus implementation
 const broadcast = {
   toAll(event) {
     const msg = JSON.stringify(event);
@@ -599,9 +192,6 @@ const broadcast = {
   },
 };
 
-// Inject broadcast bus into song queue
-songQueue.init(broadcast);
-
 // ── Bus WebSocket handler ─────────────────────────────────────────────────────
 wssBus.on('connection', (ws, req) => {
   const role = new URL(req.url, 'http://localhost').searchParams.get('role') || 'unknown';
@@ -612,19 +202,10 @@ wssBus.on('connection', (ws, req) => {
   getWeather().then((w) => {
     ws.send(JSON.stringify({ type: 'weather.update', weather: w, prompt: formatForPrompt(w) }));
   });
-  ws.send(JSON.stringify({ type: 'queue.updated', queue: songQueue.getQueue() }));
-  // When projection (re)connects: replay the current song if one is playing.
-  if (role === 'projection' && songQueue.getQueue().nowPlaying) {
-    ws.send(JSON.stringify({ type: 'ktv.play', item: songQueue.getQueue().nowPlaying }));
-  }
-  if (role === 'projection' && stageScriptState.visible && !songQueue.getQueue().nowPlaying) {
-    ws.send(JSON.stringify(stageScriptPayload()));
-  }
-  // Notify all operator panels when projection comes online.
+
   if (role === 'projection') {
     broadcast.toControl({ type: 'projection.status', connected: true });
   }
-  // Tell a newly connected control panel the current projection status.
   if (role === 'control') {
     ws.send(JSON.stringify({ type: 'projection.status', connected: hasBusClient('projection') }));
   }
@@ -633,48 +214,24 @@ wssBus.on('connection', (ws, req) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
-    // Control panel pushes session updates through the bus
-    if (msg.type === 'session.update' && activeRealtimeWs) {
+    // Control panel pushes session updates through the bus — 14.5 fix: readyState guard
+    if (msg.type === 'session.update' && activeRealtimeWs && activeRealtimeWs.readyState === WebSocket.OPEN) {
       activeRealtimeWs.send(JSON.stringify({ type: 'session.update', session: msg.session }));
-    }
-
-    // Operator switches projection mode (ai / ktv)
-    if (msg.type === 'projection.mode') {
-      broadcast.toProjection({ type: 'projection.mode', mode: msg.mode });
     }
 
     if (msg.type === 'projection.fullscreen') {
       broadcast.toMain({ type: 'projection.fullscreen' });
     }
 
-    // Control requests the Electron main process to open the audience song
-    // request window when switching into KTV mode.
-    if (msg.type === 'audience.open') {
-      broadcast.toMain({ type: 'audience.open' });
-    }
-
-    // Operator triggers KTV AI analysis
-    if (msg.type === 'ktv.analyze') {
-      broadcast.toProjection({ type: 'ktv.analyze', item: msg.item });
-    }
-
-    // Operator clears AI transcript display
     if (msg.type === 'transcript.clear') {
       broadcast.toProjection({ type: 'transcript.clear' });
       broadcast.toMonitor({ type: 'transcript.clear' });
     }
 
-    // Control panel pushes current AI params so the monitor page can display them
     if (msg.type === 'monitor.params') {
       broadcast.toMonitor({ type: 'monitor.params', params: msg.params });
     }
 
-    // KTV lyric style toggle (wipe / line) — projection listens
-    if (msg.type === 'projection.lyric_style') {
-      broadcast.toProjection({ type: 'projection.lyric_style', style: msg.style });
-    }
-
-    // Operator changes realtime voice provider
     if (msg.type === 'realtime.provider') {
       broadcast.toAll({ type: 'realtime.provider', provider: msg.provider });
     }
@@ -683,7 +240,6 @@ wssBus.on('connection', (ws, req) => {
   ws.on('close', () => {
     busClients.delete(ws);
     console.log(`[bus] Client disconnected: role=${role}, total=${busClients.size}`);
-    // Notify operator panels when the last projection client drops.
     if (role === 'projection') {
       broadcast.toControl({ type: 'projection.status', connected: hasBusClient('projection') });
     }
@@ -695,22 +251,12 @@ wssRealtime.on('connection', (ws) => {
   console.log('[realtime] Actor browser connected');
   activeRealtimeWs = ws;
 
-  // Load current settings for API keys and provider defaults
   const settings = settingsLib.getSettings(false);
-  const apiKeys = {
-    openai: settings.keys.openai,
-    gemini: settings.keys.gemini,
-    openaiRealtime: settings.models.openaiRealtime,
-    geminiLive: settings.models.geminiLive,
-  };
-
-  // Use the new realtime proxy which handles both OpenAI and Gemini
-  const { handleRealtimeClient } = require('./lib/realtime-proxy');
   handleRealtimeClient(ws, broadcast, {
-    openai:        apiKeys.openai,
-    gemini:        apiKeys.gemini,
-    openaiRealtime: apiKeys.openaiRealtime,
-    geminiLive:    apiKeys.geminiLive,
+    openai:         settings.keys.openai,
+    gemini:         settings.keys.gemini,
+    openaiRealtime: settings.models.openaiRealtime,
+    geminiLive:     settings.models.geminiLive,
   });
 
   ws.on('close', () => {
@@ -721,21 +267,16 @@ wssRealtime.on('connection', (ws) => {
 // ── WebSocket upgrade routing ─────────────────────────────────────────────────
 server.on('upgrade', (req, socket, head) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
-
   if (pathname === '/ws/realtime') {
-    wssRealtime.handleUpgrade(req, socket, head, (ws) => {
-      wssRealtime.emit('connection', ws, req);
-    });
+    wssRealtime.handleUpgrade(req, socket, head, (ws) => wssRealtime.emit('connection', ws, req));
   } else if (pathname === '/ws/bus') {
-    wssBus.handleUpgrade(req, socket, head, (ws) => {
-      wssBus.emit('connection', ws, req);
-    });
+    wssBus.handleUpgrade(req, socket, head, (ws) => wssBus.emit('connection', ws, req));
   } else {
     socket.destroy();
   }
 });
 
-// ── Periodic weather push to all clients ─────────────────────────────────────
+// ── Periodic weather push ─────────────────────────────────────────────────────
 setInterval(async () => {
   const w = await getWeather();
   broadcast.toAll({ type: 'weather.update', weather: w, prompt: formatForPrompt(w) });
@@ -748,21 +289,15 @@ server.listen(PORT, '0.0.0.0', () => {
   let localIP = 'localhost';
   for (const ifaces of Object.values(nets)) {
     for (const iface of ifaces) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        localIP = iface.address;
-        break;
-      }
+      if (iface.family === 'IPv4' && !iface.internal) { localIP = iface.address; break; }
     }
   }
-
-  console.log('\n  ourT Theatre Performance Server');
+  console.log('\n  ourT — lite');
   console.log('  ─────────────────────────────────');
   console.log(`  Operator panel:  http://${localIP}:${PORT}/control`);
   console.log(`  Projection:      http://${localIP}:${PORT}/projection`);
   console.log(`  Monitor:         http://${localIP}:${PORT}/monitor`);
-  console.log(`  Audience:        http://${localIP}:${PORT}/audience`);
   console.log(`  Local access:    http://localhost:${PORT}/control`);
-  // Electron detects this line to know the server is ready:
   console.log('READY:' + PORT);
   console.log('');
 });

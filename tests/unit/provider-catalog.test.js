@@ -16,7 +16,6 @@ const {
   FALLBACK_MODELS,
   fetchOpenAIRealtimeModels,
   fetchGeminiModels,
-  fetchTextModels,
   clearCache,
 } = require('../../server/lib/provider-catalog');
 
@@ -118,17 +117,9 @@ test('FALLBACK_MODELS — excludes the retired Gemini 2.5 text models', () => {
   assert.ok(FALLBACK_MODELS.gemini.includes('gemini-3.5-flash'));
 });
 
-test('fetchTextModels — lists account-available Claude, Groq, Mistral, and OpenAI text models', async () => {
-  const fetches = {
-    claude: async () => jsonResponse({ data: [{ id: 'claude-sonnet-test' }], has_more: false }),
-    groq: async () => jsonResponse({ data: [{ id: 'llama-chat', active: true }, { id: 'whisper-large-v3', active: true }] }),
-    mistral: async () => jsonResponse({ data: [{ id: 'mistral-chat', archived: false, capabilities: { completion_chat: true } }, { id: 'mistral-embed', archived: false, capabilities: { completion_chat: false } }] }),
-    openai: async () => jsonResponse({ data: [{ id: 'gpt-4.1-mini' }, { id: 'gpt-realtime-2.1' }, { id: 'whisper-1' }] }),
-  };
-  assert.deepEqual((await fetchTextModels('claude', 'key', fetches.claude)).models, ['claude-sonnet-test']);
-  assert.deepEqual((await fetchTextModels('groq', 'key', fetches.groq)).models, ['llama-chat']);
-  assert.deepEqual((await fetchTextModels('mistral', 'key', fetches.mistral)).models, ['mistral-chat']);
-  assert.deepEqual((await fetchTextModels('openai', 'key', fetches.openai)).models, ['gpt-4.1-mini']);
+test('provider-catalog module exports no text-model fetcher (lite has no text-generation providers)', () => {
+  const moduleExports = require('../../server/lib/provider-catalog');
+  assert.equal('fetchTextModels' in moduleExports, false);
 });
 
 test('fetchGeminiModels — falls back on error', async () => {

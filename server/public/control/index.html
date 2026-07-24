@@ -65,8 +65,8 @@
     border-bottom: 1px solid var(--border);
   }
 
-  /* ── Big mode buttons ── */
-  .mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* ── Mode button (AI only in lite) ── */
+  .mode-row { display: flex; gap: 8px; }
   .mode-btn {
     padding: 14px 8px; border: 1px solid var(--border);
     background: transparent; color: var(--muted);
@@ -74,8 +74,7 @@
     cursor: pointer; text-transform: uppercase; transition: all 0.2s;
     text-align: center; line-height: 1.6;
   }
-  .mode-btn.active-ai  { border-color: var(--accent); color: var(--accent); background: rgba(224,208,255,0.07); }
-  .mode-btn.active-ktv { border-color: var(--accent2); color: var(--accent2); background: rgba(255,208,224,0.07); }
+  .mode-btn.active-ai { border-color: var(--accent); color: var(--accent); background: rgba(224,208,255,0.07); }
 
   /* ── Voice selector ── */
   .voice-grid {
@@ -110,22 +109,6 @@
   }
   .preset-row .preset-btn:hover { color: var(--text); border-color: var(--text); }
   .preset-row .preset-btn.danger:hover { color: var(--active); border-color: var(--active); }
-
-  /* ── Song search results ── */
-  .search-result-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-  .search-result-row {
-    display: flex; align-items: center; gap: 8px;
-    border: 1px solid var(--border); padding: 6px;
-  }
-  .search-result-row img {
-    width: 48px; height: 48px; object-fit: cover; flex-shrink: 0; background: #000;
-  }
-  .search-result-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .search-result-title {
-    font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .search-result-meta { font-size: 9px; color: var(--muted); }
-  .search-result-row .btn { flex-shrink: 0; font-size: 9px; padding: 6px 8px; }
 
   /* ── Custom modal (replaces unsupported window.prompt() / native confirm) ── */
   .modal-overlay {
@@ -235,16 +218,6 @@
   .feature-toggle:hover input:checked + .feature-toggle-box { border-color: var(--ok); color: var(--ok); }
   .feature-toggle:hover input:checked + .feature-toggle-box .feature-toggle-detail { color: var(--ok); }
 
-  .script-cast-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .script-cast-input {
-    display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: 11px;
-  }
-  .script-cast-input input {
-    width: 100%; background: transparent; border: 1px solid var(--muted); color: var(--text);
-    font-family: monospace; font-size: 13px; padding: 9px; outline: none;
-  }
-  .script-cast-input input:focus { border-color: var(--accent); }
-
   /* ── Weather widget ── */
   .weather-box {
     background: #000; border: 1px solid var(--border);
@@ -264,18 +237,6 @@
     line-height: 1.6;
   }
 
-  /* ── KTV section ── */
-  .queue-list { display: flex; flex-direction: column; gap: 5px; }
-  .queue-item {
-    padding: 8px 10px; border: 1px solid var(--border);
-    font-size: 11px; color: var(--muted);
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .queue-item.now-playing { border-color: var(--accent2); color: var(--accent2); }
-  .queue-item .play-btn {
-    font-size: 9px; padding: 3px 8px; border: 1px solid currentColor;
-    background: transparent; color: inherit; font-family: monospace; cursor: pointer;
-  }
   .settings { border: 1px solid var(--border); padding: 10px; }
   .settings summary { cursor: pointer; color: var(--accent); font-size: 11px; }
   .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
@@ -339,19 +300,12 @@
 
 <div class="page">
 
-  <!-- ── PROJECTION MODE ── -->
+  <!-- ── PROJECTION CONTROLS ── -->
   <div class="section">
-    <div class="section-title">投影模式 / Projection Mode</div>
-    <div class="mode-row">
-      <button class="mode-btn active-ai" id="mode-ai" onclick="setProjectionMode('ai')">
-        AI 對話<br><span style="font-size:9px;opacity:0.6">Realtime Chat</span>
-      </button>
-      <button class="mode-btn" id="mode-ktv" onclick="setProjectionMode('ktv')">
-        KTV<br><span style="font-size:9px;opacity:0.6">Karaoke</span>
-      </button>
-    </div>
-    <div class="btn-row" style="margin-top:6px;">
+    <div class="section-title">投影 / Projection</div>
+    <div class="btn-row">
       <button class="btn" onclick="toggleProjectionFullscreen()">切換投影全螢幕</button>
+      <button class="btn" onclick="clearTranscript()">清除投影文字</button>
     </div>
   </div>
 
@@ -438,13 +392,6 @@
       <textarea id="prompt-override" placeholder="（可留空）臨時補充指令，如：現在開始說英文。" oninput="onPromptOverrideInput()"></textarea>
     </div>
 
-    <div class="param">
-      <label class="feature-toggle">
-        <input type="checkbox" id="audience-label-mode" onchange="setAudienceLabelMode(this.checked)">
-        <span class="feature-toggle-box">精簡資訊回覆<span class="feature-toggle-detail">資訊整理、標籤或摘要僅回覆 1–3 句；不延伸、不提問。</span></span>
-      </label>
-    </div>
-
     <!-- ── Character presets ── -->
     <div class="param">
       <div class="param-header">
@@ -468,10 +415,6 @@
       <button class="btn warn" onclick="cancelResponse()">打斷 AI</button>
       <button class="btn danger" onclick="endSessionManually()">結束</button>
     </div>
-    <div class="btn-row">
-      <button class="btn" onclick="clearTranscript()">清除投影文字</button>
-    </div>
-
     <!-- ── Audio monitor ── -->
     <div class="audio-monitor" id="audio-monitor">
       <div class="audio-monitor-row">
@@ -494,16 +437,10 @@
 
   <!-- ── RUNTIME SETTINGS ── -->
   <details class="settings" id="runtime-settings">
-    <summary>系統設定 / Providers, KTV</summary>
+    <summary>系統設定 / Settings</summary>
     <div class="settings-grid">
       <label>Realtime 語音提供者
         <select id="setting-realtime-provider"><option value="openai">OpenAI</option><option value="gemini">Gemini Live</option></select>
-      </label>
-      <label>歌詞改寫提供者
-        <select id="setting-lyrics-provider"><option value="gemini">Gemini</option><option value="claude">Claude</option><option value="groq">Groq</option><option value="mistral">Mistral</option><option value="openai">OpenAI</option></select>
-      </label>
-      <label>歌曲分析提供者
-        <select id="setting-analysis-provider"><option value="gemini">Gemini</option><option value="claude">Claude</option><option value="groq">Groq</option><option value="mistral">Mistral</option><option value="openai">OpenAI</option></select>
       </label>
       <label>OpenAI Realtime 模型 <span style="font-size:9px;color:var(--muted)">(即時取得)</span>
         <select id="setting-openai-realtime-model"></select>
@@ -511,38 +448,11 @@
       <label>Gemini Live 模型 <span style="font-size:9px;color:var(--muted)">(即時取得)</span>
         <select id="setting-gemini-live-model"></select>
       </label>
-      <label>Gemini 文字模型 <span style="font-size:9px;color:var(--muted)">(即時取得)</span>
-        <select id="setting-gemini-model"></select>
-      </label>
-      <label>Claude 文字模型 <span style="font-size:9px;color:var(--muted)">(帳號即時取得)</span>
-        <select id="setting-claude-model"></select>
-      </label>
-      <label>Groq 文字模型 <span style="font-size:9px;color:var(--muted)">(帳號即時取得)</span>
-        <select id="setting-groq-model"></select>
-      </label>
-      <label>Mistral 文字模型 <span style="font-size:9px;color:var(--muted)">(帳號即時取得)</span>
-        <select id="setting-mistral-model"></select>
-      </label>
-      <label>OpenAI 文字模型 <span style="font-size:9px;color:var(--muted)">(帳號即時取得)</span>
-        <select id="setting-openaitext-model"></select>
-      </label>
       <label>Gemini Live 聲音
         <select id="setting-gemini-voice"></select>
       </label>
       <label>OpenAI API Key<input id="setting-openai-key" type="password" autocomplete="new-password"></label>
       <label>Gemini API Key<input id="setting-gemini-key" type="password" autocomplete="new-password"></label>
-      <label>Anthropic API Key<input id="setting-anthropic-key" type="password" autocomplete="new-password"></label>
-      <label>Groq API Key<input id="setting-groq-key" type="password" autocomplete="new-password"></label>
-      <label>Mistral API Key<input id="setting-mistral-key" type="password" autocomplete="new-password"></label>
-      <label>KTV 預設版本
-        <select id="setting-ktv-variant"><option value="gender-swap">性別互換</option><option value="emotional">情緒放大</option><option value="distorted">超現實</option></select>
-      </label>
-      <label>KTV 自動改寫
-        <select id="setting-ktv-auto"><option value="false">關閉</option><option value="true">開啟</option></select>
-      </label>
-      <label class="wide">歌曲分析自訂提示 <span style="font-size:9px;color:var(--muted)">（留空則使用內建預設提示）</span>
-        <textarea id="setting-song-analysis-prompt" placeholder="（可留空）自訂 AI 分析觀眾點歌傾向時使用的提示"></textarea>
-      </label>
       <label class="wide">音訊輸入裝置
         <select id="setting-audio-input" onchange="onAudioDeviceChange()"><option value="">系統預設麥克風</option></select>
       </label>
@@ -559,163 +469,10 @@
     <div class="settings-status" id="settings-status">讀取中⋯</div>
   </details>
 
-  <div class="section">
-    <div class="section-title">舞台劇本 / Stage Script</div>
-    <div class="script-cast-controls">
-      <label class="script-cast-input">角色人數（包含系統）
-        <input id="stage-script-actor-count" type="number" min="1" max="8" value="2">
-      </label>
-      <label class="feature-toggle">
-        <input id="stage-script-system-actor" type="checkbox">
-        <span class="feature-toggle-box">系統作為角色<span class="feature-toggle-detail">啟用時，「系統」佔用角色人數中的一席。</span></span>
-      </label>
-    </div>
-    <div class="param">
-      <textarea id="stage-script-prompt" placeholder="（可留空）劇本創作方向，例如：兩位角色在舞台上討論身份、記憶與身體。"></textarea>
-    </div>
-    <div class="btn-row">
-      <button class="btn primary" type="button" onclick="generateStageScript()">產生約 1000 字劇本</button>
-    </div>
-    <div class="btn-row">
-      <button class="btn primary" type="button" onclick="showStageScript()">顯示劇本</button>
-      <button class="btn" type="button" onclick="navigateStageScript('previous')">上一段</button>
-      <button class="btn" type="button" onclick="navigateStageScript('next')">下一段</button>
-      <button class="btn danger" type="button" onclick="closeStageScript()">關閉劇本</button>
-    </div>
-    <div class="settings-status" id="stage-script-status">產生後會投影多行對話；可用上一段／下一段閱讀。</div>
-  </div>
-
-  <!-- ── AI DIALOGUE FEATURE TOGGLES ── -->
-  <details class="settings" id="ai-feature-toggles">
-    <summary>AI 對話功能開關</summary>
-    <div style="font-size:9px;color:var(--muted);margin-top:8px;">變更後需結束並重新開始/連線才會套用（與更換聲音相同限制 — 兩個提供者的工具宣告都僅能在連線當下設定）。</div>
-    <div class="settings-grid" style="margin-top:8px;">
-      <label class="wide feature-toggle">
-        <input type="checkbox" id="setting-voice-length-control">
-        <span class="feature-toggle-box">語音調整回應長度<span class="feature-toggle-detail">允許表演者用語音要求「簡短一點」或「多說一點」，AI 會自行呼叫工具調整之後的回應長度。</span></span>
-      </label>
-      <label class="wide feature-toggle">
-        <input type="checkbox" id="setting-voice-song-import">
-        <span class="feature-toggle-box">語音搜尋並下載歌曲<span class="feature-toggle-detail">允許表演者用語音要求 AI 搜尋 KTV 歌曲；AI 會先讀出搜尋結果確認，確認後才開始下載。預設關閉，較耗資源。</span></span>
-      </label>
-      <div class="wide btn-row"><button class="btn primary" type="button" onclick="saveAiFeatureToggles()">儲存 AI 對話功能開關</button></div>
-    </div>
-    <div class="settings-status" id="ai-feature-status"></div>
-  </details>
-
   <!-- ── WEATHER ── -->
   <div class="section">
     <div class="section-title">現場氣象 / Venue Weather</div>
     <div class="weather-box" id="weather-box">讀取中⋯</div>
-  </div>
-
-  <!-- ── SONG SEARCH + IMPORT ── -->
-  <div class="section">
-    <div class="section-title">搜尋並匯入歌曲 / Search &amp; Import (YouTube)</div>
-    <div class="param">
-      <div style="display:flex;gap:6px;">
-        <input type="text" id="song-search-input" placeholder="輸入歌名或歌手，例如：周杰倫 稻香"
-          style="flex:1;background:#000;border:1px solid var(--border);color:var(--text);
-                 font-family:monospace;font-size:12px;padding:7px 10px;outline:none;"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();searchSongs();}">
-        <button class="btn primary" type="button" onclick="searchSongs()">搜尋</button>
-      </div>
-    </div>
-    <div class="search-result-list" id="song-search-results"></div>
-    <div style="font-size:9px;color:var(--muted);" id="song-import-status">—</div>
-  </div>
-
-  <!-- ── OPERATOR SONG PICKER ── -->
-  <div class="section">
-    <div class="section-title">控制台選歌 / Operator Song Picker</div>
-    <select id="control-song-select"
-      style="background:#000;border:1px solid var(--border);color:var(--text);font-family:monospace;font-size:12px;padding:7px 10px;width:100%;outline:none;">
-      <option value="">— 選擇歌曲 —</option>
-    </select>
-    <div class="btn-row" style="margin-top:8px;">
-      <button class="btn" type="button" onclick="addControlSong(false)">加入佇列</button>
-      <button class="btn primary" type="button" onclick="addControlSong(true)">播放此歌</button>
-    </div>
-    <div style="font-size:9px;color:var(--muted);margin-top:6px;">播放此歌會在目前沒有歌曲時立即開始；已有歌曲時會加入佇列。</div>
-  </div>
-
-  <!-- ── KTV SECTION ── -->
-  <div class="section">
-    <div class="section-title" style="display:flex;align-items:center;gap:8px;">
-      KTV 點歌佇列 / Song Queue
-      <span id="projection-badge" class="conn-badge error" style="font-size:9px;padding:2px 7px;margin-left:auto;">投影未連線</span>
-    </div>
-    <div class="queue-list" id="queue-list">
-      <div style="color:var(--muted);font-size:11px">暫無點歌</div>
-    </div>
-    <div class="btn-row">
-      <button class="btn primary" id="play-song-btn" onclick="playNext()" disabled>播放</button>
-      <button class="btn" id="skip-song-btn" onclick="skipSong()" disabled>切歌</button>
-      <button class="btn danger" onclick="clearQueue()">清空佇列</button>
-    </div>
-    <div class="btn-row">
-      <button class="btn" id="lyric-style-btn" onclick="toggleLyricStyle()">歌詞模式：整行</button>
-    </div>
-    <!-- Live rehearsal sync tuning — only meaningful while a song is playing -->
-    <div class="param" id="lyric-offset-row" style="display:none;">
-      <div class="param-header">
-        <div class="param-label">歌詞偏移 <span>Lyric Offset — 即時微調同步</span></div>
-        <div class="param-value" id="lyric-offset-value">0 ms</div>
-      </div>
-      <input type="range" min="-2000" max="2000" step="100" value="0" id="lyric-offset-slider"
-        oninput="onLyricOffsetInput(this.value)">
-    </div>
-  </div>
-
-  <!-- ── LYRICS EDITOR ── -->
-  <div class="section">
-    <div class="section-title">歌詞編輯 / Lyrics Editor</div>
-
-    <!-- Song selector -->
-    <div class="param">
-      <div class="param-label">歌曲 <span>Song</span></div>
-      <select id="lyrics-song-select" onchange="onLyricsSongChange(this.value)"
-        style="background:#000;border:1px solid var(--border);color:var(--text);
-               font-family:monospace;font-size:12px;padding:7px 10px;width:100%;outline:none;">
-        <option value="">— 選擇歌曲 —</option>
-      </select>
-    </div>
-
-    <!-- Variant selector + generate -->
-    <div class="param">
-      <div class="param-label">版本 <span>Variant</span></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;" id="variant-btns">
-        <button class="btn" data-variant="original"   onclick="selectVariant('original')">原版</button>
-        <button class="btn" data-variant="gender-swap" onclick="selectVariant('gender-swap')">性別互換</button>
-        <button class="btn" data-variant="emotional"  onclick="selectVariant('emotional')">情緒放大</button>
-        <button class="btn" data-variant="distorted"  onclick="selectVariant('distorted')">超現實</button>
-        <button class="btn" data-variant="live"       onclick="selectVariant('live')">即時覆蓋</button>
-      </div>
-    </div>
-
-    <!-- Generate button + custom prompt -->
-    <div class="param">
-      <textarea id="lyrics-custom-prompt" placeholder="自訂改寫指令（可留空，使用預設規則）"
-        style="min-height:50px;"></textarea>
-    </div>
-    <div class="btn-row">
-      <button class="btn primary" onclick="generateVariant()">LLM 即時生成</button>
-      <button class="btn" onclick="loadVariantIntoEditor()">載入編輯器</button>
-    </div>
-
-    <!-- Manual editor -->
-    <div class="param" style="margin-top:4px;">
-      <div class="param-label">手動編輯 LRC <span>Direct edit — changes apply to projection immediately</span></div>
-      <textarea id="lyrics-editor"
-        placeholder="[00:12.34]歌詞第一行&#10;[00:16.00]歌詞第二行"
-        style="min-height:160px;font-size:11px;line-height:1.7;"
-        oninput="onEditorInput()"></textarea>
-    </div>
-    <div style="font-size:9px;color:var(--muted);margin-top:-4px;" id="lyrics-editor-status">—</div>
-    <div class="btn-row">
-      <button class="btn primary" onclick="pushLyricsOverride()">推送到投影</button>
-      <button class="btn" onclick="clearLyricsOverride()">清除覆蓋（還原原版）</button>
-    </div>
   </div>
 
   <!-- ── STATUS LOG ── -->
@@ -788,27 +545,16 @@ const state = {
   attitude: 'passive',
   emotionalState: 'confused',
   params: { doubt: 5, gender: 5, pressure: 5, label: 5, energy: 5 },
-  projectionMode: 'ai',
   sessionActive: false,
   weather: null,
-  // Tri-state, mirrors server/lib/realtime-session.js's responseLengthInstruction()
-  // levels ('concise'|'normal'|'expanded'). Generalizes what used to be a
-  // conciseInformationMode boolean — now settable either by the operator (the
-  // 精簡資訊回覆 checkbox, concise/normal only) or by the performer's own voice
-  // via the set_response_length tool call (any of the 3 levels; see the
-  // 'ai.responseLength' bus case below).
-  responseLength: 'normal',
-  queue: { nowPlaying: null, upcoming: [] },
   settings: null,
   // Short-term rolling memory (server/lib/realtime-session.js:
   // appendTranscriptTurn/buildGeminiSeedTurns/buildOpenAISeedItems). Lives
   // here (not server-side) because every reconnect opens a brand-new
   // browser->server WebSocket — this is the one place that survives across
-  // those cycles. Cleared only on an explicit operator 結束 (endSessionManually);
-  // preserved across Gemini/voice reconnects and KTV pause/resume.
+  // those cycles. Cleared only on an explicit operator 結束 (endSessionManually).
   recentTranscript: [],
-  // Content of server/rag/*.md (same shared context used by lyrics
-  // rewrite/song analysis) — fetched once at startup, see loadRagContext().
+  // Content of server/rag/*.md — fetched once at startup, see loadRagContext().
   ragContext: '',
 };
 const MAX_RECENT_TRANSCRIPT_TURNS = 8; // ~4 exchanges — bounded ("short") on purpose
@@ -838,37 +584,6 @@ function rememberTranscriptTurn(role, text) {
   }
 }
 
-// ── KTV / AI Realtime mutual exclusion ───────────────────────────────────────
-// Client-side mirrors of the pure didKtvStart()/didKtvEnd() in
-// server/lib/realtime-session.js (see that file's tests); duplicated here for
-// the same reason as rememberTranscriptTurn() above — no bundler to require()
-// that Node module from this plain HTML page.
-function didKtvStart(prevQueue, nextQueue) {
-  return !prevQueue?.nowPlaying && !!nextQueue?.nowPlaying;
-}
-function didKtvEnd(prevQueue, nextQueue) {
-  return !!prevQueue?.nowPlaying && !nextQueue?.nowPlaying;
-}
-
-// True while the AI session was auto-paused because a KTV song started, so
-// it can be auto-resumed (and only then) once that song ends. Never set when
-// the operator explicitly stopped the session via 結束 (endSessionManually).
-let pausedForKtv = false;
-
-function handleQueueUpdated(nextQueue) {
-  const prevQueue = state.queue;
-  if (didKtvStart(prevQueue, nextQueue) && state.sessionActive) {
-    pausedForKtv = true;
-    log('KTV 開始播放，AI 對話暫停');
-    closeSession();
-  } else if (didKtvEnd(prevQueue, nextQueue) && pausedForKtv) {
-    pausedForKtv = false;
-    log('KTV 播放結束，AI 對話自動重新連線');
-    startSession();
-  }
-  state.queue = nextQueue;
-  renderQueue(nextQueue);
-}
 
 function connectBus() {
   const wsUrl = `ws://${location.host}/ws/bus?role=control`;
@@ -902,24 +617,8 @@ function handleBusMessage(msg) {
       state.weather = msg.weather;
       renderWeather(msg.weather);
       break;
-    case 'queue.updated':
-      handleQueueUpdated(msg.queue);
-      break;
-    case 'catalog.updated':
-      initLyricsEditor();
-      log('歌曲目錄已更新');
-      break;
     case 'projection.status':
       updateProjectionBadge(msg.connected);
-      break;
-    // The performer voice-requested a response-length change (set_response_length
-    // tool call, intercepted in server/lib/realtime-proxy.js). Reflect it back
-    // into Control's own state so any later operator-driven instruction rebuild
-    // (attitude/slider change, etc.) doesn't silently overwrite it.
-    case 'ai.responseLength':
-      state.responseLength = msg.level;
-      document.getElementById('audience-label-mode').checked = msg.level === 'concise';
-      log(`AI 語音要求調整回應長度：${msg.level}`);
       break;
     case 'bus.welcome':
       log(`角色：${msg.role}`);
@@ -1000,7 +699,9 @@ function scheduleReconnect(generation) {
   log(`Gemini 連線意外中斷，${(delay / 1000).toFixed(2)} 秒後重試（${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}）…`);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    if (desiredSession && generation === sessionGeneration) startSession();
+    // false = automatic retry; must NOT reset reconnectAttempts, or the
+    // exponential backoff cap below would never actually be enforced.
+    if (desiredSession && generation === sessionGeneration) startSession(false);
   }, delay);
 }
 
@@ -1016,7 +717,16 @@ function handleRealtimeSocketClose(socket, generation) {
   if (desiredSession && generation === sessionGeneration) scheduleReconnect(generation);
 }
 
-function startSession() {
+/**
+ * @param {boolean} manual - true when called from the 開始/連線 button (a
+ *   fresh operator-initiated attempt always gets a full retry budget); false
+ *   when called internally by scheduleReconnect's timer (must NOT reset the
+ *   counter there, or the exponential-backoff cap in scheduleReconnect()
+ *   would never be enforced across a cascade of automatic failures — see
+ *   the 14.6 fix note above scheduleReconnect()).
+ */
+function startSession(manual = true) {
+  if (manual) reconnectAttempts = 0;
   desiredSession = true;
   clearReconnectTimer();
   const generation = ++sessionGeneration;
@@ -1356,11 +1066,8 @@ function closeSession() {
 }
 
 /**
- * The 結束 button's handler — an explicit, operator-intentional stop. Unlike
- * a KTV-triggered pause (which calls closeSession() directly and preserves
- * state.recentTranscript so the conversation can resume naturally when the
- * song ends), this signals "this conversation is over" and clears short-term
- * memory so the next 開始/連線 starts fresh.
+ * The 結束 button's handler — an explicit, operator-intentional stop. Clears
+ * short-term memory so the next 開始/連線 starts fresh.
  */
 function endSessionManually() {
   closeSession();
@@ -1379,21 +1086,10 @@ function buildSessionPayload() {
     // Short-term memory: sent on every session.start (first connect AND every
     // reconnect). The server seeds a fresh provider connection with these
     // turns (server/lib/realtime-session.js buildGeminiSeedTurns/
-    // buildOpenAISeedItems) so a Gemini parameter change, an OpenAI voice
-    // change, or a KTV pause/resume doesn't start the conversation cold.
+    // buildOpenAISeedItems) so a Gemini parameter change or an OpenAI voice
+    // change doesn't start the conversation cold.
     recentTranscript: state.recentTranscript,
-    // Tool declarations are connect-time-only on both providers, so which
-    // tools to include is decided here rather than pushed live. Toggled via
-    // Control's 系統設定 -> AI 對話功能開關 (server/lib/settings.js: aiFeatures).
-    enabledTools: buildEnabledToolNames(),
   };
-}
-
-function buildEnabledToolNames() {
-  const names = [];
-  if (state.settings?.aiFeatures?.voiceLengthControl) names.push('responseLength');
-  if (state.settings?.aiFeatures?.voiceSongImport) names.push('songImport');
-  return names;
 }
 
 function buildInstructions() {
@@ -1437,22 +1133,8 @@ function buildInstructions() {
 
   const override = document.getElementById('prompt-override').value.trim();
 
-  // Mirrors server/lib/realtime-session.js's responseLengthInstruction() text
-  // exactly (kept in sync manually — this plain HTML page has no bundler to
-  // require() that Node module). 'normal' matches the original
-  // unchecked-checkbox behavior: no extra rule, and 反問 (follow-up questions)
-  // remain allowed.
-  const responseLengthRule = state.responseLength === 'concise'
-    ? `\n\n精簡資訊回覆模式（此規則優先）：當對方要求標籤、摘要、現場觀察、整理或其他資訊型回答時，只回覆 1–3 句、總長約 20–60 字。直接回答，不得提問、不得使用問號、不得邀請對方回應、不得提出建議或延續話題。保留必要的不確定性，例如「可能」或「目前看起來」。`
-    : state.responseLength === 'expanded'
-      ? `\n\n詳細回應模式：可以多說一點，給出更完整、更有層次的回應，但仍保持自然的對話節奏，不要變成長篇獨白。`
-      : '';
-  const conversationalRule = state.responseLength === 'concise' ? '' : '可以反問。';
-
-  // server/rag/*.md (演出概念 + 台灣同志運動歷史事件) — same shared content
-  // already used for lyrics rewrite/song analysis, fetched once via
-  // loadRagContext(). Framed so the AI only draws on it when actually
-  // relevant, rather than reciting it unprompted.
+  // server/rag/*.md — fetched once via loadRagContext(). Framed so the AI
+  // only draws on it when actually relevant, rather than reciting it unprompted.
   const ragSection = state.ragContext
     ? `\n\n【背景資料庫】\n${state.ragContext}\n（僅在對話自然涉及相關主題時參考這些資料；不要主動長篇朗讀或條列全部內容。）`
     : '';
@@ -1470,33 +1152,10 @@ ${attitudeSection}
 - 核心情緒：${stateLabels[state.emotionalState]}
 ${weatherNote}
 
-說話方式：使用臺灣繁體中文（zh-TW），避免簡體字與中國大陸用語；語氣真實，允許不完整的句子、停頓、矛盾。不要給出解決方案——你在思考。${conversationalRule}${override ? '\n\n補充指令：' + override : ''}${responseLengthRule}${ragSection}`;
-}
-
-function setAudienceLabelMode(enabled) {
-  state.responseLength = enabled ? 'concise' : 'normal';
-  log(enabled ? '已開啟精簡資訊回覆' : '已關閉精簡資訊回覆');
-  scheduleLiveUpdate();
+說話方式：使用臺灣繁體中文（zh-TW），避免簡體字與中國大陸用語；語氣真實，允許不完整的句子、停頓、矛盾。不要給出解決方案——你在思考。可以反問。${override ? '\n\n補充指令：' + override : ''}${ragSection}`;
 }
 
 // ── UI interaction ────────────────────────────────────────────────────────────
-function setProjectionMode(mode) {
-  state.projectionMode = mode;
-  document.getElementById('mode-ai').className = 'mode-btn' + (mode === 'ai' ? ' active-ai' : '');
-  document.getElementById('mode-ktv').className = 'mode-btn' + (mode === 'ktv' ? ' active-ktv' : '');
-  sendBus({ type: 'projection.mode', mode });
-  if (mode === 'ktv') openAudiencePage();
-  log('投影模式：' + mode);
-}
-
-function openAudiencePage() {
-  if (navigator.userAgent.includes('Electron')) {
-    sendBus({ type: 'audience.open' });
-    return;
-  }
-  const audienceWindow = window.open('/audience', 'ourt-audience', 'popup,width=420,height=760');
-  if (!audienceWindow) log('觀眾點歌視窗被瀏覽器封鎖，請允許 popup 後再試');
-}
 
 /**
  * Render the OpenAI voice grid from the live catalog endpoint (neither
@@ -1573,11 +1232,6 @@ function captureCurrentCharacter() {
     emotionalState: state.emotionalState,
     params: { ...state.params },
     promptOverride: document.getElementById('prompt-override').value,
-    // Presets persist the boolean 'concise vs normal' distinction only — the
-    // richer 3-level state.responseLength also includes 'expanded', which is
-    // reachable via voice mid-conversation but isn't meant to be captured
-    // into a pre-configured rehearsal preset.
-    conciseInformationMode: state.responseLength === 'concise',
   };
 }
 
@@ -1606,10 +1260,6 @@ function applyCharacterState(preset) {
   }
   if (typeof preset.promptOverride === 'string') {
     document.getElementById('prompt-override').value = preset.promptOverride;
-  }
-  if (typeof preset.conciseInformationMode === 'boolean') {
-    state.responseLength = preset.conciseInformationMode ? 'concise' : 'normal';
-    document.getElementById('audience-label-mode').checked = preset.conciseInformationMode;
   }
   scheduleLiveUpdate();
 }
@@ -1725,268 +1375,6 @@ function clearTranscript() {
   log('投影文字已清除');
 }
 
-// ── KTV ───────────────────────────────────────────────────────────────────────
-function updateProjectionBadge(connected) {
-  const badge = document.getElementById('projection-badge');
-  if (!badge) return;
-  badge.className = 'conn-badge ' + (connected ? 'connected' : 'error');
-  badge.textContent = connected ? '投影已連線' : '投影未連線';
-}
-
-async function playNext() {
-  const btn = document.getElementById('play-song-btn');
-  try {
-    const res = await fetch('/api/queue/play', { method: 'POST' });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || '播放失敗');
-    log('播放：' + json.item?.song?.title);
-    if (json.projectionConnected === false) {
-      log('⚠ 投影畫面尚未連線 — 投影連線後將自動開始播放');
-    }
-    flashQueueButton(btn, '✓ 播放中', 1500);
-  } catch (error) {
-    log('無法播放：' + error.message);
-    flashQueueButton(btn, '播放失敗', 1800);
-  }
-}
-
-async function addControlSong(playWhenIdle) {
-  const songId = document.getElementById('control-song-select').value;
-  if (!songId) {
-    log('請先選擇歌曲');
-    return;
-  }
-  try {
-    const res = await fetch('/api/queue/enqueue', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ songId, requesterLabel: '操作員' }),
-    });
-    const json = await res.json();
-    if (!res.ok || !json.ok) throw new Error(json.error || '加入佇列失敗');
-    log('操作員加入：' + json.item.song.title);
-    if (!playWhenIdle) return;
-    if (state.queue.nowPlaying) {
-      log('目前已有歌曲播放中，已加入佇列');
-      return;
-    }
-    await playNext();
-  } catch (error) {
-    log('無法加入歌曲：' + error.message);
-  }
-}
-
-async function skipSong() {
-  const btn = document.getElementById('skip-song-btn');
-  try {
-    const res = await fetch('/api/queue/skip', { method: 'POST' });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || '切歌失敗');
-    if (!json.ok) {
-      log('目前沒有播放中的歌曲');
-      return;
-    }
-    if (json.item) {
-      log(`切歌：${json.finished.song.title} → ${json.item.song.title}`);
-      flashQueueButton(btn, '✓ 下一首', 1500);
-    } else {
-      log(`切歌：${json.finished.song.title}（佇列已空）`);
-      flashQueueButton(btn, '✓ 已停止', 1500);
-    }
-  } catch (error) {
-    log('無法切歌：' + error.message);
-  }
-}
-
-async function clearQueue() {
-  const btn = document.querySelector('[onclick="clearQueue()"]');
-  await fetch('/api/queue/clear', { method: 'POST' });
-  log('佇列已清空');
-  flashButton(btn, '✓ 已清空', 1500);
-}
-
-function renderQueue(queue) {
-  const el = document.getElementById('queue-list');
-  const rows = [];
-
-  if (queue.nowPlaying) {
-    const s = queue.nowPlaying.song;
-    rows.push(`<div class="queue-item now-playing">
-      <span>♪ ${s.title} — ${s.artist}</span>
-      <span style="font-size:9px">${queue.nowPlaying.requesterLabel}</span>
-    </div>`);
-  }
-
-  queue.upcoming.forEach((item) => {
-    const s = item.song;
-    rows.push(`<div class="queue-item">
-      <span>${s.title} — ${s.artist}</span>
-      <span style="font-size:9px">${item.requesterLabel}</span>
-    </div>`);
-  });
-
-  el.innerHTML = rows.length ? rows.join('') : '<div style="color:var(--muted);font-size:11px">暫無點歌</div>';
-  document.getElementById('play-song-btn').disabled = !!queue.nowPlaying || queue.upcoming.length === 0;
-  document.getElementById('skip-song-btn').disabled = !queue.nowPlaying;
-  updateLyricOffsetRow(queue.nowPlaying);
-}
-
-// ── Live lyric offset (rehearsal sync tuning) ──────────────────────────────
-let lyricOffsetSongId = null;
-let lyricOffsetDebounceTimer = null;
-
-function updateLyricOffsetRow(nowPlaying) {
-  const row = document.getElementById('lyric-offset-row');
-  if (!nowPlaying) {
-    row.style.display = 'none';
-    lyricOffsetSongId = null;
-    return;
-  }
-  row.style.display = '';
-  const songId = nowPlaying.song.id;
-  if (songId !== lyricOffsetSongId) {
-    // New song started playing — reset the slider to that song's saved offset.
-    lyricOffsetSongId = songId;
-    const offsetMs = Math.round((nowPlaying.song.lrcOffset || 0) * 1000);
-    document.getElementById('lyric-offset-slider').value = offsetMs;
-    document.getElementById('lyric-offset-value').textContent = offsetMs + ' ms';
-  }
-}
-
-function onLyricOffsetInput(msValue) {
-  document.getElementById('lyric-offset-value').textContent = msValue + ' ms';
-  clearTimeout(lyricOffsetDebounceTimer);
-  lyricOffsetDebounceTimer = setTimeout(() => pushLyricOffset(msValue), 300);
-}
-
-async function pushLyricOffset(msValue) {
-  if (!lyricOffsetSongId) return;
-  const offsetSeconds = Number(msValue) / 1000;
-  try {
-    const res = await fetch(`/api/songs/${encodeURIComponent(lyricOffsetSongId)}/offset`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lrcOffset: offsetSeconds }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || '更新失敗');
-    log(`歌詞偏移已更新：${msValue} ms`);
-  } catch (error) {
-    log('歌詞偏移更新失敗：' + error.message);
-  }
-}
-
-// ── Song search + import (YouTube via yt-dlp, no API key) ─────────────────
-async function searchSongs() {
-  const input = document.getElementById('song-search-input');
-  const query = input.value.trim();
-  const statusEl = document.getElementById('song-import-status');
-  const resultsEl = document.getElementById('song-search-results');
-  if (!query) return;
-
-  statusEl.textContent = '搜尋中…';
-  resultsEl.innerHTML = '';
-  try {
-    const res = await fetch(`/api/songs/search?q=${encodeURIComponent(query)}`);
-    const results = await res.json();
-    if (!res.ok) throw new Error(results.error || '搜尋失敗');
-    renderSearchResults(results);
-    statusEl.textContent = results.length ? `找到 ${results.length} 筆結果` : '沒有找到結果';
-  } catch (error) {
-    statusEl.textContent = '搜尋失敗：' + error.message;
-  }
-}
-
-function renderSearchResults(results) {
-  const resultsEl = document.getElementById('song-search-results');
-  resultsEl.innerHTML = '';
-  results.forEach((r) => {
-    const row = document.createElement('div');
-    row.className = 'search-result-row';
-
-    const img = document.createElement('img');
-    img.src = r.thumbnailUrl || '';
-    img.alt = '';
-
-    const info = document.createElement('div');
-    info.className = 'search-result-info';
-    const durationLabel = r.durationSeconds
-      ? `${Math.floor(r.durationSeconds / 60)}:${String(r.durationSeconds % 60).padStart(2, '0')}`
-      : '—';
-    info.innerHTML = `<div class="search-result-title">${escapeHtmlText(r.title)}</div>` +
-      `<div class="search-result-meta">${escapeHtmlText(r.channel || '')} · ${durationLabel}</div>`;
-
-    const importBtn = document.createElement('button');
-    importBtn.className = 'btn primary';
-    importBtn.type = 'button';
-    importBtn.textContent = '匯入';
-    importBtn.onclick = () => importSelectedSong(r, importBtn);
-
-    row.append(img, info, importBtn);
-    resultsEl.appendChild(row);
-  });
-}
-
-async function importSelectedSong(result, btn) {
-  const artist = await customPrompt('歌手／演出者名稱（可留空）：', result.channel || '');
-  if (artist === null) return; // cancelled
-  const title = await customPrompt('歌曲標題：', result.title);
-  if (title === null) return;
-
-  const statusEl = document.getElementById('song-import-status');
-  btn.disabled = true;
-  btn.textContent = '匯入中…';
-  statusEl.textContent = '啟動匯入…';
-
-  try {
-    const res = await fetch('/api/songs/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId: result.videoId, title, artist, tags: [] }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || '匯入啟動失敗');
-    log(`開始匯入：${title} — ${artist}`);
-    await pollImportJob(json.jobId, statusEl, btn);
-  } catch (error) {
-    statusEl.textContent = '匯入失敗：' + error.message;
-    btn.disabled = false;
-    btn.textContent = '匯入';
-  }
-}
-
-function pollImportJob(jobId, statusEl, btn) {
-  return new Promise((resolve) => {
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/songs/import/${encodeURIComponent(jobId)}`);
-        const job = await res.json();
-        statusEl.textContent = job.message || job.status;
-        if (job.status === 'done') {
-          log('匯入完成：' + job.songId);
-          btn.textContent = '✓ 已匯入';
-          resolve();
-          return;
-        }
-        if (job.status === 'error') {
-          log('匯入失敗：' + job.message);
-          btn.disabled = false;
-          btn.textContent = '重試匯入';
-          resolve();
-          return;
-        }
-        setTimeout(poll, 1500);
-      } catch (error) {
-        statusEl.textContent = '狀態查詢失敗：' + error.message;
-        btn.disabled = false;
-        btn.textContent = '匯入';
-        resolve();
-      }
-    };
-    poll();
-  });
-}
-
 // ── Weather render ────────────────────────────────────────────────────────────
 function renderWeather(w) {
   const el = document.getElementById('weather-box');
@@ -2010,234 +1398,6 @@ function log(msg) {
   el.innerHTML = `<div>${ts} ${msg}</div>` + el.innerHTML;
 }
 
-function lyricsGenerationSelection() {
-  const provider = state.settings?.providers?.lyricsRewrite || 'gemini';
-  return { provider, model: state.settings?.models?.[provider] || '未選擇模型' };
-}
-
-// ── Stage script ──────────────────────────────────────────────────────────────
-async function generateStageScript() {
-  const btn = document.querySelector('[onclick="generateStageScript()"]');
-  const status = document.getElementById('stage-script-status');
-  btn.disabled = true;
-  btn.textContent = '劇本生成中⋯';
-  const selection = lyricsGenerationSelection();
-  status.textContent = `正在使用 ${selection.provider} / ${selection.model} 產生劇本⋯`;
-  try {
-    const res = await fetch('/api/stage-script/generate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: document.getElementById('stage-script-prompt').value.trim(),
-        actorCount: Number(document.getElementById('stage-script-actor-count').value),
-        systemIsActor: document.getElementById('stage-script-system-actor').checked,
-      }),
-    });
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || '劇本生成失敗');
-    status.textContent = `✓ 劇本已產生（${json.characterCount} 字，${json.pageCount} 段，${json.provider} / ${json.model}）；按「顯示劇本」投影。`;
-    status.style.color = 'var(--ok)';
-    log('舞台劇本已產生並投影');
-  } catch (error) {
-    status.textContent = '✗ 劇本生成失敗：' + error.message;
-    status.style.color = 'var(--active)';
-    log('劇本生成失敗：' + error.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '產生約 1000 字劇本';
-  }
-}
-
-async function navigateStageScript(action) {
-  const status = document.getElementById('stage-script-status');
-  try {
-    const res = await fetch('/api/stage-script/navigate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }),
-    });
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || '劇本換頁失敗');
-    status.textContent = `劇本第 ${json.page + 1} / ${json.pageCount} 段`;
-    status.style.color = 'var(--text)';
-  } catch (error) {
-    status.textContent = '✗ ' + error.message;
-    status.style.color = 'var(--active)';
-  }
-}
-
-async function showStageScript() {
-  const status = document.getElementById('stage-script-status');
-  try {
-    const res = await fetch('/api/stage-script/show', { method: 'POST' });
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || '顯示劇本失敗');
-    status.textContent = `✓ 顯示劇本，第 ${json.page + 1} / ${json.pageCount} 段`;
-    status.style.color = 'var(--ok)';
-  } catch (error) {
-    status.textContent = '✗ ' + error.message;
-    status.style.color = 'var(--active)';
-  }
-}
-
-async function closeStageScript() {
-  await fetch('/api/stage-script/close', { method: 'POST' });
-  document.getElementById('stage-script-status').textContent = '劇本已關閉，Projection 回到 AI 畫面。';
-  document.getElementById('stage-script-status').style.color = 'var(--muted)';
-}
-
-// ── Lyrics editor ─────────────────────────────────────────────────────────────
-let lyricsCurrentSong = null;
-let lyricsCurrentVariant = 'original';
-let editorDirty = false;
-
-async function initLyricsEditor() {
-  const res = await fetch('/api/songs');
-  const catalog = await res.json();
-  const sel = document.getElementById('lyrics-song-select');
-  const selectedSongId = sel.value;
-  sel.replaceChildren(new Option('選擇歌曲…', ''));
-  catalog.forEach((s) => {
-    const opt = document.createElement('option');
-    opt.value = s.id;
-    opt.textContent = `${s.title} — ${s.artist}`;
-    sel.appendChild(opt);
-  });
-  if (catalog.some((s) => s.id === selectedSongId)) sel.value = selectedSongId;
-  refreshControlSongSelector(catalog);
-}
-
-function refreshControlSongSelector(catalog) {
-  const sel = document.getElementById('control-song-select');
-  const selectedSongId = sel.value;
-  sel.replaceChildren(new Option('— 選擇歌曲 —', ''));
-  catalog.forEach((song) => {
-    sel.appendChild(new Option(`${song.title} — ${song.artist}`, song.id));
-  });
-  if (catalog.some((song) => song.id === selectedSongId)) sel.value = selectedSongId;
-}
-
-async function onLyricsSongChange(songId) {
-  lyricsCurrentSong = songId || null;
-  editorDirty = false;
-  document.getElementById('lyrics-editor').value = '';
-  document.getElementById('lyrics-editor-status').textContent = '—';
-  if (!songId) return;
-  await refreshVariantButtons(songId);
-  await loadVariantIntoEditor();
-}
-
-async function refreshVariantButtons(songId) {
-  if (!songId) return;
-  const res = await fetch(`/api/songs/${songId}/lyrics/variants`);
-  const json = await res.json();
-  const available = json.variants || [];
-  document.querySelectorAll('#variant-btns .btn').forEach((btn) => {
-    const v = btn.dataset.variant;
-    btn.style.opacity = available.includes(v) ? '1' : '0.35';
-  });
-  if (json.activeVariant && available.includes(json.activeVariant)) selectVariant(json.activeVariant);
-}
-
-function selectVariant(variant) {
-  lyricsCurrentVariant = variant;
-  document.querySelectorAll('#variant-btns .btn').forEach((b) => {
-    b.className = 'btn' + (b.dataset.variant === variant ? ' primary' : '');
-  });
-}
-
-async function loadVariantIntoEditor() {
-  if (!lyricsCurrentSong) { log('請先選擇歌曲'); return; }
-  const url = lyricsCurrentVariant === 'live'
-    ? `/api/songs/${lyricsCurrentSong}/lyrics?variant=live`
-    : `/api/songs/${lyricsCurrentSong}/lyrics?variant=${lyricsCurrentVariant}`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('找不到歌詞檔案');
-    const text = await res.text();
-    document.getElementById('lyrics-editor').value = text;
-    setLyricsStatus(`已載入：${lyricsCurrentVariant}  (${text.split('\n').length} 行)`, 'ok');
-    editorDirty = false;
-  } catch (e) {
-    log('載入歌詞失敗：' + e.message);
-    setLyricsStatus('載入失敗：' + e.message, 'error');
-  }
-}
-
-async function generateVariant() {
-  if (!lyricsCurrentSong) { log('請先選擇歌曲'); return; }
-  const btn = document.querySelector('[onclick="generateVariant()"]');
-  const variant = lyricsCurrentVariant === 'original' || lyricsCurrentVariant === 'live'
-    ? 'gender-swap'
-    : lyricsCurrentVariant;
-  const customPrompt = document.getElementById('lyrics-custom-prompt').value.trim();
-  const selection = lyricsGenerationSelection();
-  log(`生成中：${variant}⋯`);
-  setLyricsStatus(`LLM 生成中（${selection.provider} / ${selection.model}）⋯`, 'pending');
-  btn.disabled = true;
-  btn.textContent = '生成中⋯';
-  try {
-    const res = await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ variant, customPrompt: customPrompt || undefined }),
-    });
-    const json = await res.json();
-    if (json.error) throw new Error(json.error);
-    document.getElementById('lyrics-editor').value = json.lrcText;
-    setLyricsStatus(`✓ 已生成「${json.variant}」(${json.lineCount} 行，${json.provider} / ${json.model})`, 'ok');
-    selectVariant(json.variant);
-    await refreshVariantButtons(lyricsCurrentSong);
-    log(`歌詞生成完成：${variant}`);
-  } catch (e) {
-    log('生成失敗：' + e.message);
-    setLyricsStatus('✗ 生成失敗：' + e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'LLM 即時生成';
-  }
-}
-
-async function pushLyricsOverride() {
-  if (!lyricsCurrentSong) { log('請先選擇歌曲'); return; }
-  const btn = document.querySelector('[onclick="pushLyricsOverride()"]');
-  const lrcText = document.getElementById('lyrics-editor').value.trim();
-  if (!lrcText) { log('編輯器為空'); return; }
-  try {
-    const res = await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/override`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lrcText, variant: lyricsCurrentVariant }),
-    });
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || '推送失敗');
-    setLyricsStatus('✓ 已推送到投影', 'ok');
-    editorDirty = false;
-    log('歌詞已推送到投影');
-    flashButton(btn, '✓ 已推送');
-    selectVariant('live');
-    await refreshVariantButtons(lyricsCurrentSong);
-  } catch (e) {
-    setLyricsStatus('✗ 推送失敗：' + e.message, 'error');
-    log('推送失敗：' + e.message);
-  }
-}
-
-async function clearLyricsOverride() {
-  if (!lyricsCurrentSong) return;
-  const btn = document.querySelector('[onclick="clearLyricsOverride()"]');
-  const res = await fetch(`/api/songs/${lyricsCurrentSong}/lyrics/override`, { method: 'DELETE' });
-  const json = await res.json();
-  if (!res.ok || json.error) { setLyricsStatus('✗ 清除覆蓋失敗：' + (json.error || '未知錯誤'), 'error'); return; }
-  setLyricsStatus(`✓ 覆蓋已清除，切換至「${json.variant}」`, 'ok');
-  log('歌詞覆蓋已清除');
-  flashButton(btn, '✓ 已清除');
-  selectVariant(json.variant);
-  await loadVariantIntoEditor();
-}
-
-function onEditorInput() {
-  editorDirty = true;
-  const lines = document.getElementById('lyrics-editor').value.split('\n').length;
-  document.getElementById('lyrics-editor-status').textContent = `編輯中⋯ (${lines} 行，未推送)`;
-}
 
 // ── Runtime settings ─────────────────────────────────────────────────────────
 function getSettingValue(id) {
@@ -2303,24 +1463,12 @@ async function loadSettings() {
     const settings = await res.json();
     state.settings = settings;
     setSettingValue('setting-realtime-provider', settings.providers.realtimeVoice);
-    setSettingValue('setting-lyrics-provider', settings.providers.lyricsRewrite);
-    setSettingValue('setting-analysis-provider', settings.providers.songAnalysis);
-    for (const provider of ['openai', 'gemini', 'anthropic', 'groq', 'mistral']) {
+    for (const provider of ['openai', 'gemini']) {
       setSettingValue(`setting-${provider}-key`, settings.keys[provider]);
     }
-    setSettingValue('setting-ktv-variant', settings.ktv.defaultVariant);
-    setSettingValue('setting-ktv-auto', String(settings.ktv.autoRewrite));
-    setSettingValue('setting-song-analysis-prompt', settings.ktv.songAnalysisPrompt || '');
-    document.getElementById('setting-voice-length-control').checked = !!settings.aiFeatures?.voiceLengthControl;
-    document.getElementById('setting-voice-song-import').checked = !!settings.aiFeatures?.voiceSongImport;
     await Promise.all([
       populateModelSelect('setting-openai-realtime-model', '/api/settings/models?provider=openai', settings.models.openaiRealtime),
       populateModelSelect('setting-gemini-live-model', '/api/settings/models?provider=geminiLive', settings.models.geminiLive),
-      populateModelSelect('setting-gemini-model', '/api/settings/models?provider=gemini', settings.models.gemini),
-      populateModelSelect('setting-claude-model', '/api/settings/models?provider=claude', settings.models.claude),
-      populateModelSelect('setting-groq-model', '/api/settings/models?provider=groq', settings.models.groq),
-      populateModelSelect('setting-mistral-model', '/api/settings/models?provider=mistral', settings.models.mistral),
-      populateModelSelect('setting-openaitext-model', '/api/settings/models?provider=openaiText', settings.models.openai),
       populateVoiceSelect('setting-gemini-voice', '/api/settings/gemini-voices', settings.models.geminiVoice),
       loadOpenAIVoiceGrid(settings.models.openaiVoice),
       refreshAudioDevices(),
@@ -2334,32 +1482,20 @@ async function loadSettings() {
 async function saveSettings() {
   const btn = document.querySelector('[onclick="saveSettings()"]');
   const keys = {};
-  for (const provider of ['openai', 'gemini', 'anthropic', 'groq', 'mistral']) {
+  for (const provider of ['openai', 'gemini']) {
     const value = getSettingValue(`setting-${provider}-key`).trim();
     if (value && !value.includes('***')) keys[provider] = value;
   }
   const patch = {
     providers: {
       realtimeVoice: getSettingValue('setting-realtime-provider'),
-      lyricsRewrite: getSettingValue('setting-lyrics-provider'),
-      songAnalysis: getSettingValue('setting-analysis-provider'),
     },
     models: {
       openaiRealtime: getSettingValue('setting-openai-realtime-model').trim(),
       geminiLive: getSettingValue('setting-gemini-live-model').trim(),
-      gemini: getSettingValue('setting-gemini-model').trim(),
       geminiVoice: getSettingValue('setting-gemini-voice').trim(),
-      claude: getSettingValue('setting-claude-model').trim(),
-      groq: getSettingValue('setting-groq-model').trim(),
-      mistral: getSettingValue('setting-mistral-model').trim(),
-      openai: getSettingValue('setting-openaitext-model').trim(),
     },
     keys,
-    ktv: {
-      defaultVariant: getSettingValue('setting-ktv-variant'),
-      autoRewrite: getSettingValue('setting-ktv-auto') === 'true',
-      songAnalysisPrompt: getSettingValue('setting-song-analysis-prompt').trim(),
-    },
     audio: {
       inputDeviceId: getSettingValue('setting-audio-input'),
       inputDeviceLabel: document.querySelector('#setting-audio-input option:checked')?.textContent || '',
@@ -2386,43 +1522,6 @@ async function saveSettings() {
   } finally {
     btn.disabled = false;
     btn.textContent = '儲存系統設定';
-  }
-}
-
-/**
- * Saves only settings.aiFeatures — kept independent from saveSettings() so
- * toggling these never risks touching provider/model/key fields. Takes
- * effect on the next 開始/連線 (tool declarations are connect-time-only).
- */
-async function saveAiFeatureToggles() {
-  const btn = document.querySelector('[onclick="saveAiFeatureToggles()"]');
-  const statusEl = document.getElementById('ai-feature-status');
-  const patch = {
-    aiFeatures: {
-      voiceLengthControl: document.getElementById('setting-voice-length-control').checked,
-      voiceSongImport: document.getElementById('setting-voice-song-import').checked,
-    },
-  };
-  btn.disabled = true;
-  btn.textContent = '儲存中⋯';
-  try {
-    const res = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || '儲存失敗');
-    state.settings = json.settings;
-    statusEl.textContent = '✓ 已儲存。下次開始/連線時套用。';
-    statusEl.style.color = 'var(--ok)';
-    log('AI 對話功能開關已儲存');
-  } catch (error) {
-    statusEl.textContent = '✗ 儲存失敗：' + error.message;
-    statusEl.style.color = 'var(--active)';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '儲存 AI 對話功能開關';
   }
 }
 
@@ -2521,17 +1620,6 @@ function flashButton(btn, label, ms = 2000) {
   }, ms);
 }
 
-function flashQueueButton(btn, label, ms) {
-  if (!btn) return;
-  const original = btn.textContent;
-  btn.textContent = label;
-  btn.disabled = true;
-  setTimeout(() => {
-    btn.textContent = original;
-    renderQueue(state.queue);
-  }, ms);
-}
-
 /**
  * Update #settings-status with colour feedback that auto-reverts on success.
  */
@@ -2540,19 +1628,6 @@ function setSettingsStatus(text, ok = true) {
   el.textContent = text;
   el.style.color = ok ? 'var(--ok)' : 'var(--active)';
   if (ok) setTimeout(() => { el.style.color = ''; }, 5000);
-}
-
-/**
- * Update #lyrics-editor-status with colour feedback.
- * state: 'ok' | 'error' | 'pending'
- */
-function setLyricsStatus(text, state = 'ok') {
-  const el = document.getElementById('lyrics-editor-status');
-  el.textContent = text;
-  el.style.color = state === 'ok' ? 'var(--ok)'
-    : state === 'error' ? 'var(--active)'
-    : 'var(--warn)';
-  if (state === 'ok') setTimeout(() => { el.style.color = ''; }, 5000);
 }
 
 // ── Realtime badge ────────────────────────────────────────────────────────────
@@ -2806,17 +1881,6 @@ function drawMeters() {
   if (meterRaf !== null) meterRaf = requestAnimationFrame(drawMeters);
 }
 
-// ── Lyric style toggle ────────────────────────────────────────────────────────
-let lyricsStyleCurrent = 'line';
-
-function toggleLyricStyle() {
-  lyricsStyleCurrent = lyricsStyleCurrent === 'line' ? 'wipe' : 'line';
-  const btn = document.getElementById('lyric-style-btn');
-  btn.textContent = lyricsStyleCurrent === 'wipe' ? '歌詞模式：掃光' : '歌詞模式：整行';
-  sendBus({ type: 'projection.lyric_style', style: lyricsStyleCurrent });
-  log('歌詞模式：' + (lyricsStyleCurrent === 'wipe' ? '掃光' : '整行'));
-}
-
 // ── Projection fullscreen toggle (via Electron main process) ──────────────────
 function toggleProjectionFullscreen() {
   // Electron main process listens for this on the bus
@@ -2842,9 +1906,7 @@ function pushMonitorParams() {
 }
 
 // ── RAG context (server/rag/*.md) ────────────────────────────────────────────
-// Same content already used for lyrics rewrite/song analysis — fetched once
-// here so the Realtime AI conversation can reference it too (buildInstructions()
-// below), which it previously had zero access to.
+// Fetched once so the Realtime AI conversation can reference it in buildInstructions().
 async function loadRagContext() {
   try {
     const res = await fetch('/api/rag/context');
@@ -2857,7 +1919,6 @@ async function loadRagContext() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 connectBus();
-initLyricsEditor();
 loadSettings();
 loadPresets();
 loadRagContext();

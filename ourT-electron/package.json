@@ -57,10 +57,6 @@
         ]
       },
       {
-        "from": "../songs",
-        "to": "songs"
-      },
-      {
         "from": "../server/node_modules",
         "to": "server/node_modules"
       }

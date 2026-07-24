@@ -10,6 +10,10 @@
  * character parameter change. See the correction note at the top of
  * realtime-session.js for the full history of why this isn't symmetric.
  *
+ * lite branch: KTV mutual-exclusion helpers and all tool/function-calling
+ * builders (response length, song search/import) were removed along with
+ * the features that used them.
+ *
  * Run: node --test tests/unit
  */
 
@@ -27,18 +31,6 @@ const {
   appendTranscriptTurn,
   buildGeminiSeedTurns,
   buildOpenAISeedItems,
-  didKtvStart,
-  didKtvEnd,
-  responseLengthInstruction,
-  RESPONSE_LENGTH_TOOL_NAME,
-  buildResponseLengthTool,
-  buildResponseLengthFunctionDeclaration,
-  SEARCH_SONG_TOOL_NAME,
-  IMPORT_SONG_TOOL_NAME,
-  buildSearchSongTool,
-  buildSearchSongFunctionDeclaration,
-  buildImportSongTool,
-  buildImportSongFunctionDeclaration,
 } = require('../../server/lib/realtime-session');
 
 test('needsReconnect — OpenAI only reconnects on a voice change', () => {
@@ -71,6 +63,12 @@ test('buildOpenAIConnectSession — defaults to alloy voice and zh-TW instructio
   assert.match(payload.session.instructions, /臺灣繁體中文/);
 });
 
+test('buildOpenAIConnectSession — no tools field exists (lite has no function calling)', () => {
+  const payload = buildOpenAIConnectSession({ instructions: '測試' });
+  assert.equal('tools' in payload.session, false);
+  assert.equal('tool_choice' in payload.session, false);
+});
+
 test('buildOpenAIInstructionsUpdate — never includes a voice field', () => {
   const payload = buildOpenAIInstructionsUpdate({ instructions: '新指令' });
   assert.equal(payload.type, 'session.update');
@@ -89,12 +87,29 @@ test('buildGeminiSetup — voice, model, and instructions all live only in the o
   assert.ok(payload.setup.outputAudioTranscription);
 });
 
+test('buildGeminiSetup — no tools field exists (lite has no function calling)', () => {
+  const payload = buildGeminiSetup({ instructions: '測試' });
+  assert.equal('tools' in payload.setup, false);
+});
+
 test('realtime-session module does not export any Gemini live-update builder', () => {
   // Regression guard: a Gemini "instructions update" builder was removed
   // after live testing showed it breaks the connection (1007 error). Make
   // sure it never quietly comes back.
   const moduleExports = require('../../server/lib/realtime-session');
   assert.equal('buildGeminiInstructionsUpdate' in moduleExports, false);
+});
+
+test('realtime-session module exports no tool/function-calling builders (lite)', () => {
+  const moduleExports = require('../../server/lib/realtime-session');
+  for (const removed of [
+    'didKtvStart', 'didKtvEnd',
+    'responseLengthInstruction', 'buildResponseLengthTool', 'buildResponseLengthFunctionDeclaration',
+    'buildSearchSongTool', 'buildSearchSongFunctionDeclaration',
+    'buildImportSongTool', 'buildImportSongFunctionDeclaration',
+  ]) {
+    assert.equal(removed in moduleExports, false, `${removed} must not be exported in lite`);
+  }
 });
 
 test('defaultInstructions — always enforces Taiwan Traditional Chinese, never Simplified', () => {
@@ -112,8 +127,7 @@ test('OpenAI connect and Gemini setup both accept the same instructions text unc
 });
 
 // ── Short-term rolling memory (appended when a reconnect must not lose the ────
-// ── recent conversation — Gemini parameter changes, OpenAI voice changes,   ──
-// ── or KTV pause/resume) ──────────────────────────────────────────────────
+// ── recent conversation — Gemini parameter changes or OpenAI voice changes) ──
 
 test('appendTranscriptTurn — appends a turn and keeps history within maxTurns', () => {
   let history = [];
@@ -196,151 +210,4 @@ test('buildOpenAISeedItems — maps history to conversation.item.create payloads
 test('buildOpenAISeedItems — returns an empty array for empty history', () => {
   assert.deepEqual(buildOpenAISeedItems([]), []);
   assert.deepEqual(buildOpenAISeedItems(undefined), []);
-});
-
-// ── KTV / AI Realtime mutual exclusion ───────────────────────────────────────
-// While audience members are singing, the AI conversation should be silent —
-// see server/public/control/index.html's queue.updated handler, which uses
-// these pure decision functions to know exactly when to call closeSession()
-// / startSession() again.
-
-test('didKtvStart — true only when nowPlaying transitions from empty to a song', () => {
-  const empty = { nowPlaying: null, upcoming: [] };
-  const playingA = { nowPlaying: { song: { id: 'a' } }, upcoming: [] };
-  assert.equal(didKtvStart(empty, playingA), true);
-});
-
-test('didKtvStart — false when a song is already playing and it just changes (skip)', () => {
-  // AI is already disconnected while song A plays; skipping straight to song
-  // B must not spuriously look like a fresh "KTV start" — it's still KTV.
-  const playingA = { nowPlaying: { song: { id: 'a' } }, upcoming: [] };
-  const playingB = { nowPlaying: { song: { id: 'b' } }, upcoming: [] };
-  assert.equal(didKtvStart(playingA, playingB), false);
-});
-
-test('didKtvStart — false when nothing was playing and still nothing is playing', () => {
-  const empty = { nowPlaying: null, upcoming: [] };
-  assert.equal(didKtvStart(empty, empty), false);
-});
-
-test('didKtvEnd — true only when nowPlaying transitions from a song to empty', () => {
-  const playingA = { nowPlaying: { song: { id: 'a' } }, upcoming: [] };
-  const empty = { nowPlaying: null, upcoming: [] };
-  assert.equal(didKtvEnd(playingA, empty), true);
-});
-
-test('didKtvEnd — false when skipping from one song directly to another', () => {
-  const playingA = { nowPlaying: { song: { id: 'a' } }, upcoming: [] };
-  const playingB = { nowPlaying: { song: { id: 'b' } }, upcoming: [] };
-  assert.equal(didKtvEnd(playingA, playingB), false);
-});
-
-test('didKtvEnd — false when nothing was playing and still nothing is playing', () => {
-  const empty = { nowPlaying: null, upcoming: [] };
-  assert.equal(didKtvEnd(empty, empty), false);
-});
-
-// ── Voice-triggered response length (tool/function calling) ─────────────────
-// Generalizes the manual 精簡資訊回覆 checkbox into a shared tri-state that
-// either the operator (checkbox) or the performer's own voice (this tool
-// call) can set. See server/lib/realtime-proxy.js for the interception side.
-
-test('responseLengthInstruction — normal is a no-op (empty instruction, matches pre-existing behavior)', () => {
-  assert.equal(responseLengthInstruction('normal'), '');
-});
-
-test('responseLengthInstruction — concise matches the original 精簡資訊回覆 rule intent', () => {
-  const text = responseLengthInstruction('concise');
-  assert.match(text, /1[–-]3 句/);
-  assert.match(text, /不得提問/);
-});
-
-test('responseLengthInstruction — expanded asks for more detail without being unbounded', () => {
-  const text = responseLengthInstruction('expanded');
-  assert.match(text, /詳細|完整|多說/);
-});
-
-test('responseLengthInstruction — falls back to normal (empty) for an unknown level', () => {
-  assert.equal(responseLengthInstruction('unknown-level'), '');
-  assert.equal(responseLengthInstruction(undefined), '');
-});
-
-test('buildResponseLengthTool — OpenAI function-tool schema with the 3-value enum', () => {
-  const tool = buildResponseLengthTool();
-  assert.equal(tool.type, 'function');
-  assert.equal(tool.name, RESPONSE_LENGTH_TOOL_NAME);
-  assert.ok(tool.description.length > 0);
-  assert.equal(tool.parameters.type, 'object');
-  assert.deepEqual(tool.parameters.properties.length.enum, ['concise', 'normal', 'expanded']);
-  assert.deepEqual(tool.parameters.required, ['length']);
-});
-
-test('buildResponseLengthFunctionDeclaration — Gemini functionDeclarations shape (no "type":"function" wrapper)', () => {
-  const decl = buildResponseLengthFunctionDeclaration();
-  assert.equal(decl.name, RESPONSE_LENGTH_TOOL_NAME);
-  assert.equal(decl.type, undefined, 'Gemini function declarations are bare — no OpenAI-style type:"function" field');
-  assert.deepEqual(decl.parameters.properties.length.enum, ['concise', 'normal', 'expanded']);
-});
-
-test('buildOpenAIConnectSession — omits tools entirely when none are provided (backward compatible)', () => {
-  const payload = buildOpenAIConnectSession({ instructions: '測試' });
-  assert.equal('tools' in payload.session, false);
-});
-
-test('buildOpenAIConnectSession — includes tools and tool_choice:"auto" when tools are provided', () => {
-  const payload = buildOpenAIConnectSession({ instructions: '測試', tools: [buildResponseLengthTool()] });
-  assert.equal(payload.session.tools.length, 1);
-  assert.equal(payload.session.tools[0].name, RESPONSE_LENGTH_TOOL_NAME);
-  assert.equal(payload.session.tool_choice, 'auto');
-});
-
-test('buildGeminiSetup — omits tools entirely when none are provided (backward compatible)', () => {
-  const payload = buildGeminiSetup({ instructions: '測試' });
-  assert.equal('tools' in payload.setup, false);
-});
-
-test('buildGeminiSetup — wraps provided function declarations in tools:[{functionDeclarations}]', () => {
-  const payload = buildGeminiSetup({ instructions: '測試', tools: [buildResponseLengthFunctionDeclaration()] });
-  assert.equal(payload.setup.tools.length, 1);
-  assert.equal(payload.setup.tools[0].functionDeclarations[0].name, RESPONSE_LENGTH_TOOL_NAME);
-});
-
-// ── Voice-triggered song search + import (opt-in: aiFeatures.voiceSongImport) ─
-// Two tools: search_song (fast, synchronous — returns candidates so the model
-// can read them back for confirmation) and import_requested_song (starts the
-// existing 30-90s async download+transcribe pipeline; only meant to be called
-// after a spoken confirmation). See server/lib/realtime-proxy.js and
-// server/lib/voice-import-guard.js for the interception/cap side.
-
-test('buildSearchSongTool — OpenAI function-tool schema requiring a query string', () => {
-  const tool = buildSearchSongTool();
-  assert.equal(tool.type, 'function');
-  assert.equal(tool.name, SEARCH_SONG_TOOL_NAME);
-  assert.equal(tool.parameters.properties.query.type, 'string');
-  assert.deepEqual(tool.parameters.required, ['query']);
-});
-
-test('buildSearchSongFunctionDeclaration — Gemini bare functionDeclarations shape', () => {
-  const decl = buildSearchSongFunctionDeclaration();
-  assert.equal(decl.name, SEARCH_SONG_TOOL_NAME);
-  assert.equal(decl.type, undefined);
-});
-
-test('buildImportSongTool — OpenAI function-tool schema requiring videoId/title/artist', () => {
-  const tool = buildImportSongTool();
-  assert.equal(tool.type, 'function');
-  assert.equal(tool.name, IMPORT_SONG_TOOL_NAME);
-  assert.equal(tool.parameters.properties.videoId.type, 'string');
-  assert.equal(tool.parameters.properties.title.type, 'string');
-  assert.equal(tool.parameters.properties.artist.type, 'string');
-  assert.deepEqual(tool.parameters.required, ['videoId', 'title', 'artist']);
-  // Must instruct the model to confirm with the performer before calling this
-  // — it starts a real 30-90s download, unlike search_song.
-  assert.match(tool.description, /確認/);
-});
-
-test('buildImportSongFunctionDeclaration — Gemini bare functionDeclarations shape', () => {
-  const decl = buildImportSongFunctionDeclaration();
-  assert.equal(decl.name, IMPORT_SONG_TOOL_NAME);
-  assert.equal(decl.type, undefined);
 });

@@ -13,36 +13,20 @@ const path = require('path');
 
 const SETTINGS_FILE = process.env.OURT_SETTINGS_PATH || path.join(__dirname, '..', 'settings.json');
 
+// lite: only realtime-voice providers, no text-generation providers or KTV
 const DEFAULT_SETTINGS = {
   providers: {
     realtimeVoice: 'openai',   // 'openai' | 'gemini'
-    lyricsRewrite: 'gemini',   // 'claude' | 'gemini' | 'groq' | 'mistral'
-    songAnalysis:  'gemini',   // 'claude' | 'gemini' | 'groq' | 'mistral'
   },
   models: {
-    claude:         'claude-sonnet-4-5',
-    gemini:         'gemini-3.5-flash',
-    groq:           'llama-3.3-70b-versatile',
-    mistral:        'mistral-large-latest',
-    openai:         'gpt-4.1-mini',
     openaiRealtime: 'gpt-realtime-2.1',
     geminiLive:     'gemini-3.1-flash-live-preview',
     openaiVoice:    'alloy',
     geminiVoice:    'Aoede',
   },
   keys: {
-    openai:    '',
-    anthropic: '',
-    gemini:    '',
-    groq:      '',
-    mistral:   '',
-  },
-  ktv: {
-    autoRewrite:    false,
-    defaultVariant: 'gender-swap',
-    // Optional override for the POST /api/ktv/analyze system prompt. Empty
-    // string means "use the built-in default prompt" (server/index.js).
-    songAnalysisPrompt: '',
+    openai: '',
+    gemini: '',
   },
   audio: {
     inputDeviceId: '',
@@ -50,24 +34,10 @@ const DEFAULT_SETTINGS = {
     outputDeviceId: '',
     outputDeviceLabel: '',
   },
-  // Saved AI character presets (voice/attitude/emotional state/sliders/prompt
-  // override), so operators can tune during rehearsal and quickly recall a
-  // known-good combination during the show. Expandable — not fixed at 4.
   characterPresets: [],
-  // System-capability toggles for the AI Realtime dialogue. Distinct from
-  // characterPresets (artistic per-character variations) — these gate
-  // technical features that apply show-wide regardless of which character
-  // preset is loaded. Both require ending/restarting the AI session to take
-  // effect, since tool declarations are connect-time-only on both providers
-  // (same constraint as a voice change).
-  aiFeatures: {
-    voiceLengthControl: true,  // AI can voice-adjust its own response length
-    voiceSongImport:    false, // AI can search/import KTV songs by voice request (opt-in: resource/cost risk)
-  },
 };
 
 let settingsCache = null;
-const RETIRED_GEMINI_TEXT_MODELS = new Set(['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro']);
 
 /**
  * Deep merge two objects. Mutates target.
@@ -112,10 +82,12 @@ function loadSettings() {
   deepMerge(settingsCache, fileSettings);
 
   if (!loadedFromFile) migrateLegacySettings();
-  const removedLegacyYolo = delete settingsCache.yolo;
-  const migratedGeminiTextModel = RETIRED_GEMINI_TEXT_MODELS.has(settingsCache.models.gemini);
-  if (migratedGeminiTextModel) settingsCache.models.gemini = DEFAULT_SETTINGS.models.gemini;
-  if (removedLegacyYolo || migratedGeminiTextModel) persistSettings();
+  // Remove stale fields from older settings files
+  let changed = false;
+  for (const field of ['ktv', 'aiFeatures', 'yolo']) {
+    if (field in settingsCache) { delete settingsCache[field]; changed = true; }
+  }
+  if (changed) persistSettings();
 
   return settingsCache;
 }
@@ -203,9 +175,10 @@ function updateSettings(patch) {
       }
     }
   }
-  if (patch.yolo) {
+  // Strip stale fields that no longer exist in lite
+  if (patch.ktv || patch.aiFeatures || patch.yolo) {
     patch = { ...patch };
-    delete patch.yolo;
+    delete patch.ktv; delete patch.aiFeatures; delete patch.yolo;
   }
   // Ensure cache is populated, then merge in-place and persist
   loadSettings();
@@ -247,11 +220,8 @@ function maskKey(key) {
 function getProviderStatus() {
   const settings = loadSettings();
   return {
-    openai:    { hasKey: !!settings.keys.openai,    name: 'OpenAI' },
-    anthropic: { hasKey: !!settings.keys.anthropic, name: 'Anthropic (Claude)' },
-    gemini:    { hasKey: !!settings.keys.gemini,    name: 'Google (Gemini)' },
-    groq:      { hasKey: !!settings.keys.groq,      name: 'Groq' },
-    mistral:   { hasKey: !!settings.keys.mistral,   name: 'Mistral' },
+    openai: { hasKey: !!settings.keys.openai, name: 'OpenAI' },
+    gemini: { hasKey: !!settings.keys.gemini, name: 'Google (Gemini)' },
   };
 }
 
@@ -259,48 +229,7 @@ function getProviderOptions() {
   return getProviderStatus();
 }
 
-/**
- * @deprecated Voice catalogs now live in lib/provider-catalog.js, served via
- * the dedicated GET /api/settings/openai-voices and /api/settings/gemini-voices
- * endpoints (neither provider exposes a live "list voices" API, so these are
- * static but kept accurate/current there). Kept here only so any stale caller
- * still gets a reasonable answer instead of an error.
- */
-function getGeminiLiveVoices() {
-  return getModelsForProvider('geminiVoice');
-}
 
-/**
- * Get available models for text-generation providers that have no live
- * models.list endpoint wired up (or where a static seed is sufficient).
- * OpenAI/Gemini realtime and live models are fetched live instead — see
- * lib/provider-catalog.js and the /api/settings/models route.
- * @param {string} provider
- * @returns {string[]}
- */
-function getModelsForProvider(provider) {
-  const settings = loadSettings();
-  const base = settings.models;
-
-  const modelLists = {
-    openai:    [base.openaiRealtime, 'gpt-realtime-2.1'],
-    gemini:    [base.gemini, 'gemini-3.5-flash'],
-    claude:    ['claude-sonnet-4-5', 'claude-opus-4', 'claude-haiku-4-5'],
-    groq:      ['llama-3.3-70b-versatile', 'llama-4-scout', 'qwen3-32b'],
-    mistral:   ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'],
-    // OpenAI TEXT-generation model (lyricsRewrite/songAnalysis), distinct from
-    // `openai` above which is the Realtime VOICE model list. Static like
-    // claude/groq/mistral — OpenAI's text models.list isn't fetched live here.
-    // De-duplicated: base.openai's default ('gpt-4.1-mini') already appears
-    // in the static suffix, so a naive [base.openai, ...] would list it twice.
-    openaiText: [...new Set([base.openai, 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini', 'gpt-4o'])],
-    geminiLive: [base.geminiLive, 'gemini-2.5-flash-native-audio-preview'],
-    openaiVoice: [base.openaiVoice, 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
-    geminiVoice: [base.geminiVoice, 'Puck', 'Charon', 'Kore', 'Fenrir', 'Leda'],
-  };
-
-  return modelLists[provider] || [];
-}
 
 /**
  * Reset settings to defaults (for testing).
@@ -344,7 +273,6 @@ function savePreset(preset) {
     emotionalState: preset.emotionalState || null,
     params: preset.params || null,
     promptOverride: preset.promptOverride || '',
-    conciseInformationMode: !!preset.conciseInformationMode,
   };
   const existingIndex = list.findIndex((item) => item.id === entry.id);
   if (existingIndex !== -1) {
@@ -377,8 +305,6 @@ module.exports = {
   maskKey,
   getProviderStatus,
   getProviderOptions,
-  getGeminiLiveVoices,
-  getModelsForProvider,
   resetSettings,
   getPresets,
   savePreset,

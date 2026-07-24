@@ -234,49 +234,6 @@
     font-weight: normal;
   }
 
-  /* ── Bottom: KTV now playing ── */
-  #ktv-strip {
-    padding: 12px 24px;
-    background: var(--panel);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    min-height: 52px;
-    gap: 16px;
-  }
-
-  #ktv-now {
-    font-size: 13px;
-    color: var(--accent2);
-    letter-spacing: 1px;
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  #ktv-next {
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 1px;
-    white-space: nowrap;
-  }
-
-  #ktv-mode-badge {
-    font-size: 10px;
-    padding: 3px 8px;
-    border: 1px solid var(--muted);
-    color: var(--muted);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    flex-shrink: 0;
-  }
-
-  #ktv-mode-badge.active {
-    border-color: var(--accent2);
-    color: var(--accent2);
-  }
-
   /* ── Connection badge ── */
   #conn-badge {
     position: fixed;
@@ -327,13 +284,6 @@
     <span class="param-chip">懷疑 <b id="p-doubt">—</b></span>
     <span class="param-chip">壓力 <b id="p-pressure">—</b></span>
     <span class="param-chip">能量 <b id="p-energy">—</b></span>
-  </div>
-
-  <!-- KTV strip -->
-  <div id="ktv-strip">
-    <span id="ktv-mode-badge">AI 模式</span>
-    <span id="ktv-now">—</span>
-    <span id="ktv-next"></span>
   </div>
 
 </div>
@@ -443,26 +393,6 @@ function updateParams(params) {
   document.getElementById('p-energy').textContent   = params.energy   != null ? params.energy   + '/10' : '—';
 }
 
-function updateQueue(queue) {
-  const now  = queue?.nowPlaying;
-  const next = queue?.upcoming?.[0];
-  const badge = document.getElementById('ktv-mode-badge');
-  const nowEl = document.getElementById('ktv-now');
-  const nextEl = document.getElementById('ktv-next');
-
-  if (now) {
-    badge.textContent = 'KTV';
-    badge.className   = 'active';
-    nowEl.textContent = `♪  ${now.song.title} — ${now.song.artist}`;
-    nextEl.textContent = next ? `下一首：${next.song.title}` : '';
-  } else {
-    badge.textContent = 'AI 模式';
-    badge.className   = '';
-    nowEl.textContent = '—';
-    nextEl.textContent = next ? `待播：${next.song.title} — ${next.song.artist}` : '';
-  }
-}
-
 // ── Bus connection ────────────────────────────────────────────────────────────
 let bus = null;
 
@@ -559,19 +489,6 @@ function handleMsg(msg) {
     // ── Params from control panel ─────────────────────────────────────────────
     case 'monitor.params':
       updateParams(msg.params);
-      break;
-
-    // ── KTV ──────────────────────────────────────────────────────────────────
-    case 'ktv.play':
-      updateQueue({ nowPlaying: msg.item, upcoming: [] });
-      break;
-
-    case 'ktv.ended':
-      updateQueue({ nowPlaying: null, upcoming: [] });
-      break;
-
-    case 'queue.updated':
-      updateQueue(msg.queue);
       break;
 
     case 'weather.update':
