@@ -743,6 +743,7 @@
   </div>
 </div>
 
+<script src="/control/audio-output.js"></script>
 <script>
 // ── Custom modal dialog ─────────────────────────────────────────────────────
 // Electron does not implement window.prompt() (throws by design), and native
@@ -1121,7 +1122,6 @@ function startSession() {
             case 'response.output_audio.delta':
               if (msg.delta) {
                 playOutputAudio(msg.delta);
-                feedOutputMeter(msg.delta);
                 setAudioStatus('AI 音訊播放中');
               }
               break;
@@ -1131,7 +1131,6 @@ function startSession() {
                 for (const part of msg.serverContent.modelTurn.parts) {
                   if (part.inlineData?.data) {
                     playOutputAudio(part.inlineData.data);
-                    feedOutputMeter(part.inlineData.data);
                     setAudioStatus('AI 音訊播放中');
                   }
                 }
@@ -2596,7 +2595,7 @@ let outputNextTime  = 0;   // AudioContext time when next chunk should start
 let outputSinkId    = null;
 let activeOutputSources = []; // scheduled/playing AudioBufferSourceNodes, for interrupt flushing
 const OUTPUT_SAMPLE_RATE = 24000; // both OpenAI and Gemini output 24kHz PCM16
-const MAX_OUTPUT_BACKLOG_SECONDS = 1;
+const MAX_OUTPUT_BACKLOG_SECONDS = 10;
 
 function setAudioStatus(text, isError = false) {
   const el = document.getElementById('audio-status');
@@ -2650,8 +2649,11 @@ function playOutputAudio(base64Pcm16) {
     if (float32.length === 0) return;
 
     const queuedSeconds = Math.max(0, outputNextTime - ctx.currentTime);
-    if (queuedSeconds > MAX_OUTPUT_BACKLOG_SECONDS) {
-      console.warn(`[audio] output backlog ${queuedSeconds.toFixed(2)}s; flushing stale audio`);
+    if (audioOutputHelpers.shouldFlushOutputBacklog(queuedSeconds, MAX_OUTPUT_BACKLOG_SECONDS)) {
+      const message = `AI 音訊積壓 ${queuedSeconds.toFixed(2)} 秒，超過 ${MAX_OUTPUT_BACKLOG_SECONDS} 秒保護上限；已清除積壓音訊。`;
+      console.warn(`[audio] ${message}`);
+      log(message, 'warn');
+      setAudioStatus(message, true);
       flushOutputAudio();
     }
 
@@ -2672,6 +2674,7 @@ function playOutputAudio(base64Pcm16) {
     const startAt = Math.max(outputNextTime, ctx.currentTime);
     source.start(startAt);
     outputNextTime = startAt + buffer.duration;
+    feedOutputMeter(samples16);
     setAudioStatus('AI 音訊播放中');
   } catch (err) {
     console.warn('[audio] playback error:', err.message);
@@ -2737,7 +2740,7 @@ function clearCanvas(id) {
 }
 
 /**
- * Compute RMS from a base64-encoded PCM16 (little-endian signed 16-bit) string.
+ * Decode base64 PCM16 (little-endian signed 16-bit) only for input metering.
  */
 function rmsFromBase64Pcm16(b64) {
   try {
@@ -2745,10 +2748,7 @@ function rmsFromBase64Pcm16(b64) {
     const bytes  = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const samples = new Int16Array(bytes.buffer);
-    if (samples.length === 0) return 0;
-    let sum = 0;
-    for (let i = 0; i < samples.length; i++) sum += (samples[i] / 32768) ** 2;
-    return Math.sqrt(sum / samples.length);
+    return audioOutputHelpers.rmsFromPcm16(samples);
   } catch {
     return 0;
   }
@@ -2759,8 +2759,8 @@ function feedInputMeter(b64, rms) {
   inputBufIdx++;
 }
 
-function feedOutputMeter(b64) {
-  outputBuf[outputBufIdx % METER_BARS] = rmsFromBase64Pcm16(b64);
+function feedOutputMeter(samples16) {
+  outputBuf[outputBufIdx % METER_BARS] = audioOutputHelpers.rmsFromPcm16(samples16);
   outputBufIdx++;
 }
 

@@ -732,3 +732,14 @@ deliberate boundary and is manual-protocol verified instead
 - [done] Bound audio playback and discard stale provider/session output
 - [done] Run 115 unit tests, package arm64/x64 Electron DMGs, and update manual verification protocols
 - [todo] Manual verification: real provider catalog lists, 1,000+ character scripts with cast rules, and long-response/reconnect audio stability
+
+## Phase 17 — Realtime Audio Backlog Stability [active]
+
+Workflow: Hybrid verification — the deterministic backlog policy is unit-tested;
+Web Audio playback requires a live provider and physical output device.
+
+- [done] Add failing unit coverage for normal lookahead, runaway backlog, and PCM RMS calculation
+- [done] Raise the playback circuit breaker from 1 to 10 seconds and expose activation in Control status/logs
+- [done] Reuse decoded playback PCM samples for the output meter
+- [done] Run 121 unit tests, Control syntax checks, arm64/x64 DMG builds, and bundled-resource secret scans
+- [todo] Manual verification: sustained provider speech, interrupt/reconnect flushing, and visible runaway-backlog circuit breaker
