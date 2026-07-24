@@ -825,7 +825,7 @@ untouched, since it was never in scope for removal.
 
 ### Verification
 
-- [done] `npm test`: 54 unit tests passing, 0 failing (down from 115 in
+- [done] `npm test`: 57 unit tests passing, 0 failing (down from 115 in
   `main`, reflecting the removed KTV/lyrics/stage-script/tool-calling
   surface; `lite-bugs.test.js` adds the 3 new regression tests)
 - [done] `node --check` passed for every modified/rewritten server module
@@ -840,8 +840,8 @@ untouched, since it was never in scope for removal.
   stability, Gemini provider-error recovery (`ai.done` reaches Projection/
   Monitor), and a manual reconnect after exhausting the automatic retry
   budget actually succeeds
-- [todo] Rebuild and gitleaks-scan arm64/x64 Electron DMGs for the `lite`
-  branch before distributing
+- [done] Rebuild and gitleaks-scan arm64/x64 Electron DMGs for the `lite`
+  branch; both bundles include the audio helper and bundled server scans are clean
 
 ## Phase 17 — Realtime Audio Backlog Stability [active]
 
@@ -851,5 +851,5 @@ Web Audio playback requires a live provider and physical output device.
 - [done] Add failing unit coverage for normal lookahead, runaway backlog, and PCM RMS calculation
 - [done] Raise the playback circuit breaker from 1 to 10 seconds and expose activation in Control status/logs
 - [done] Reuse decoded playback PCM samples for the output meter
-- [done] Run 121 unit tests, Control syntax checks, arm64/x64 DMG builds, and bundled-resource secret scans
+- [done] Run 57 unit tests, Control syntax checks, arm64/x64 DMG builds, and bundled-resource secret scans
 - [todo] Manual verification: sustained provider speech, interrupt/reconnect flushing, and visible runaway-backlog circuit breaker
