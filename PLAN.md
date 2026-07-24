@@ -843,13 +843,16 @@ untouched, since it was never in scope for removal.
 - [done] Rebuild and gitleaks-scan arm64/x64 Electron DMGs for the `lite`
   branch; both bundles include the audio helper and bundled server scans are clean
 
-## Phase 17 — Realtime Audio Backlog Stability [active]
+## Phase 17 — Realtime Audio Continuity [active]
 
 Workflow: Hybrid verification — the deterministic backlog policy is unit-tested;
 Web Audio playback requires a live provider and physical output device.
 
-- [done] Add failing unit coverage for normal lookahead, runaway backlog, and PCM RMS calculation
-- [done] Raise the playback circuit breaker from 1 to 10 seconds and expose activation in Control status/logs
-- [done] Reuse decoded playback PCM samples for the output meter
-- [done] Run 57 unit tests, Control syntax checks, arm64/x64 DMG builds, and bundled-resource secret scans
-- [todo] Manual verification: sustained provider speech, interrupt/reconnect flushing, and visible runaway-backlog circuit breaker
+- [done] Add failing unit coverage for no-auto-discard, queue warnings, jitter buffering, input echo protection, and PCM RMS calculation
+- [done] Replace automatic backlog flushing with a 10-second visible warning so received AI speech is never dropped
+- [done] Add a 120ms initial/recovery jitter buffer and retain decoded PCM for the output meter
+- [done] Enable browser echo cancellation, noise suppression, and automatic gain control for microphone capture
+- [done] Add `正常` as the selected default emotional state and include its instruction text
+- [done] Run 62 unit tests, Control syntax checks, arm64/x64 DMG builds, and bundled-resource secret scans
+- [done] Live operator verification: AI speech continuity issue reported resolved after the no-auto-discard, jitter-buffer, and echo-protection changes
+- [todo] Manual verification: interrupt/reconnect flushing remains to be exercised explicitly

@@ -68,8 +68,10 @@ live provider connection, real audio hardware, or the actual Electron app.
 | AI finishes | Monitor: `完成` (green, fades after 2s) | |
 | | Projection: cursor returns to slow blink | |
 | During a long response, change Gemini settings or interrupt AI | No old audio resumes after reconnect/interrupt; ordinary 1–3 second provider lookahead continues uninterrupted | |
-| Sustain AI speech for at least 30 seconds | Speech remains continuous without stutter/cut-offs; Control does not report the 10-second backlog circuit breaker | |
-| Simulate or observe a runaway output queue | Control status and log visibly report that the 10-second backlog circuit breaker cleared queued audio | |
+| Sustain AI speech for at least 30 seconds | Speech remains continuous without stutter/cut-offs; the 120ms initial playback buffer is not perceptible; Control does not report the 10-second backlog circuit breaker | |
+| Observe Control during speech | No repeated `已重建緩衝` status/log appears. A single recovery after a real network delivery gap is acceptable and confirms the jitter buffer engaged. | |
+| Simulate or observe a runaway output queue | Control status and log visibly report the 10-second queue warning; already received speech remains queued and is never cleared automatically | |
+| Use speakers rather than headphones during an AI response | Browser echo cancellation/noise suppression prevents the AI's own speaker output from triggering a VAD barge-in; no `AI 已被打斷` log appears unless the performer actually speaks | |
 | Force provider/network interruption during a response | Control, Monitor, and Projection leave the speaking state; queued audio stops | |
 
 ---

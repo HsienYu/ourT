@@ -336,7 +336,8 @@
     <div class="param">
       <div class="param-label">情緒狀態 <span>Emotional State</span></div>
       <div class="state-grid">
-        <button class="state-btn selected" data-state="confused"   onclick="setState('confused')">困惑 — 我是什麼？</button>
+        <button class="state-btn selected" data-state="normal"     onclick="setState('normal')">正常 — 保持平穩</button>
+        <button class="state-btn" data-state="confused"   onclick="setState('confused')">困惑 — 我是什麼？</button>
         <button class="state-btn" data-state="dissolving" onclick="setState('dissolving')">消融 — 也許什麼都不是</button>
         <button class="state-btn" data-state="angry"      onclick="setState('angry')">憤怒 — 為何要我選擇？</button>
         <button class="state-btn" data-state="curious"    onclick="setState('curious')">好奇 — 告訴我你怎麼看我</button>
@@ -544,7 +545,7 @@ function modalResolveAction(accepted) {
 const state = {
   voice: 'marin', // OpenAI's recommended best-quality Realtime voice
   attitude: 'passive',
-  emotionalState: 'confused',
+  emotionalState: 'normal',
   params: { doubt: 5, gender: 5, pressure: 5, label: 5, energy: 5 },
   sessionActive: false,
   weather: null,
@@ -832,7 +833,6 @@ function startSession(manual = true) {
             case 'response.output_audio.delta':
               if (msg.delta) {
                 playOutputAudio(msg.delta);
-                setAudioStatus('AI 音訊播放中');
               }
               break;
             default:
@@ -841,7 +841,6 @@ function startSession(manual = true) {
                 for (const part of msg.serverContent.modelTurn.parts) {
                   if (part.inlineData?.data) {
                     playOutputAudio(part.inlineData.data);
-                    setAudioStatus('AI 音訊播放中');
                   }
                 }
               }
@@ -876,8 +875,7 @@ function startSession(manual = true) {
 }
 
 function audioInputConstraints() {
-  const deviceId = state.settings?.audio?.inputDeviceId;
-  return deviceId ? { deviceId: { exact: deviceId } } : true;
+  return audioOutputHelpers.buildInputAudioConstraints(state.settings?.audio?.inputDeviceId);
 }
 
 function prepareInputAudio() {
@@ -1120,6 +1118,7 @@ function buildInstructions() {
 
   const stateLabels = {
     confused: '困惑——我是什麼？',
+    normal: '正常——保持平穩、清晰地回應',
     dissolving: '消融——也許什麼都不是',
     angry: '憤怒——為何要我選擇？',
     curious: '好奇——告訴我你怎麼看我',
@@ -1671,6 +1670,7 @@ let outputSinkId    = null;
 let activeOutputSources = []; // scheduled/playing AudioBufferSourceNodes, for interrupt flushing
 const OUTPUT_SAMPLE_RATE = 24000; // both OpenAI and Gemini output 24kHz PCM16
 const MAX_OUTPUT_BACKLOG_SECONDS = 10;
+const OUTPUT_START_DELAY_SECONDS = 0.12;
 
 function setAudioStatus(text, isError = false) {
   const el = document.getElementById('audio-status');
@@ -1724,12 +1724,11 @@ function playOutputAudio(base64Pcm16) {
     if (float32.length === 0) return;
 
     const queuedSeconds = Math.max(0, outputNextTime - ctx.currentTime);
-    if (audioOutputHelpers.shouldFlushOutputBacklog(queuedSeconds, MAX_OUTPUT_BACKLOG_SECONDS)) {
-      const message = `AI 音訊積壓 ${queuedSeconds.toFixed(2)} 秒，超過 ${MAX_OUTPUT_BACKLOG_SECONDS} 秒保護上限；已清除積壓音訊。`;
+    if (audioOutputHelpers.shouldWarnOutputBacklog(queuedSeconds, MAX_OUTPUT_BACKLOG_SECONDS)) {
+      const message = `AI 音訊積壓 ${queuedSeconds.toFixed(2)} 秒，超過 ${MAX_OUTPUT_BACKLOG_SECONDS} 秒提示門檻；保留所有音訊避免跳字。`;
       console.warn(`[audio] ${message}`);
       log(message, 'warn');
       setAudioStatus(message, true);
-      flushOutputAudio();
     }
 
     // Create AudioBuffer and schedule it
@@ -1745,12 +1744,23 @@ function playOutputAudio(base64Pcm16) {
       if (idx !== -1) activeOutputSources.splice(idx, 1);
     };
 
-    // Schedule gaplessly: start at outputNextTime, but clamp to now if we've fallen behind
-    const startAt = Math.max(outputNextTime, ctx.currentTime);
-    source.start(startAt);
-    outputNextTime = startAt + buffer.duration;
+    // Keep a small cushion against ordinary WebSocket delivery jitter. Once
+    // queued, chunks remain exactly gapless without adding more delay.
+    const schedule = audioOutputHelpers.scheduleOutputChunk({
+      currentTime: ctx.currentTime,
+      nextTime: outputNextTime,
+      duration: buffer.duration,
+      startDelaySeconds: OUTPUT_START_DELAY_SECONDS,
+    });
+    source.start(schedule.startAt);
+    outputNextTime = schedule.nextTime;
     feedOutputMeter(samples16);
-    setAudioStatus('AI 音訊播放中');
+    if (schedule.recoveredFromUnderrun) {
+      log('AI 音訊緩衝不足，已重建 120ms 播放緩衝。', 'warn');
+      setAudioStatus('AI 音訊播放中（已重建緩衝）', true);
+    } else {
+      setAudioStatus('AI 音訊播放中');
+    }
   } catch (err) {
     console.warn('[audio] playback error:', err.message);
     setAudioStatus('AI 音訊播放失敗：' + err.message, true);
