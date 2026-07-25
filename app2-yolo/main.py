@@ -49,10 +49,13 @@ logging.getLogger("ultralytics").setLevel(logging.ERROR)
 log = logging.getLogger("main")
 
 # ── Load config ───────────────────────────────────────────────────────────────
-CONFIG_PATH = Path(__file__).parent / "config.yaml"
+# Path.cwd() works in both contexts:
+#   - bundle: app.py calls os.chdir(Resources/) before importing this module
+#   - dev:    user runs from project root (same assumption as __file__.parent)
+CONFIG_PATH = Path.cwd() / "config.yaml"
 
 def load_config() -> dict:
-    with open(CONFIG_PATH) as f:
+    with open(CONFIG_PATH, encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 cfg = load_config()

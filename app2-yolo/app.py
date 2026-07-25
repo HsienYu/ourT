@@ -34,6 +34,17 @@ os.environ.setdefault("GLOG_minloglevel", "3")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("YOLO_VERBOSE", "False")
 
+# ── Bundle-aware resource directory (py2app vs. dev) ────────────────────────
+def _resource_dir() -> Path:
+    """Contents/Resources/ in a frozen bundle; __file__'s parent in dev."""
+    if getattr(sys, 'frozen', False):
+        # py2app places the stub executable at Contents/MacOS/<name>
+        return Path(sys.executable).parent.parent / 'Resources'
+    return Path(__file__).parent
+
+RESOURCE_DIR = _resource_dir()
+os.chdir(str(RESOURCE_DIR))   # CWD = resource dir before any pipeline imports
+
 import cv2
 import numpy as np
 import yaml
@@ -64,10 +75,10 @@ logging.getLogger("ultralytics").setLevel(logging.ERROR)
 log = logging.getLogger("app")
 
 # ── Load config ───────────────────────────────────────────────────────────────
-CONFIG_PATH = Path(__file__).parent / "config.yaml"
+CONFIG_PATH = RESOURCE_DIR / "config.yaml"
 
 def load_cfg() -> dict:
-    with open(CONFIG_PATH) as f:
+    with open(CONFIG_PATH, encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 # ── Dark palette ──────────────────────────────────────────────────────────────
@@ -309,11 +320,26 @@ def section_title(text: str) -> QLabel:
     return lbl
 
 
+
+def _detect_available_devices() -> list:
+    """Return [{label, value}] for available torch compute backends."""
+    import torch
+    devices = [{"label": "Auto", "value": ""}]
+    if torch.backends.mps.is_available():
+        devices.append({"label": "MPS  (Apple GPU)", "value": "mps"})
+    if torch.cuda.is_available():
+        for i in range(torch.cuda.device_count()):
+            name = torch.cuda.get_device_name(i)
+            devices.append({"label": f"CUDA:{i}  ({name})", "value": f"cuda:{i}"})
+    devices.append({"label": "CPU", "value": "cpu"})
+    return devices
+
 # ── Sidebar panel ─────────────────────────────────────────────────────────────
 
 class Sidebar(QFrame):
     config_changed = pyqtSignal(dict)   # emits patch dict for Pipeline.update_config()
     camera_changed = pyqtSignal(int)    # emits new webcam index
+    device_changed = pyqtSignal(str)    # emits device string; MainWindow restarts pipeline
 
     def __init__(self, cfg: dict, cameras: list, parent=None):
         super().__init__(parent)
@@ -336,6 +362,7 @@ class Sidebar(QFrame):
         root.addWidget(scroll_area)
 
         self._build_camera_section(cameras)
+        self._build_device_section(cfg)
         self._build_bias_section(cfg)
         self._build_mode_section()
         self._build_labels_section(cfg)
@@ -365,6 +392,32 @@ class Sidebar(QFrame):
         cam_index = self._cam_combo.currentData()
         if cam_index is not None and cam_index >= 0:
             self.camera_changed.emit(cam_index)
+
+    # ── Compute device section ────────────────────────────────────────────────
+
+    def _build_device_section(self, cfg: dict) -> None:
+        g = QGroupBox("COMPUTE / 運算裝置")
+        gl = QVBoxLayout(g)
+        gl.setSpacing(6)
+
+        current = cfg.get("yolo", {}).get("device", "")
+        devices = _detect_available_devices()
+        self._device_combo = QComboBox()
+        sel = 0
+        for i, d in enumerate(devices):
+            self._device_combo.addItem(d["label"], d["value"])
+            if d["value"] == current:
+                sel = i
+        self._device_combo.setCurrentIndex(sel)
+        self._device_combo.currentIndexChanged.connect(self._on_device_change)
+        gl.addWidget(self._device_combo)
+
+        self._vbox.addWidget(g)
+
+    def _on_device_change(self, _idx: int) -> None:
+        device = self._device_combo.currentData()
+        if device is not None:
+            self.device_changed.emit(device)
 
     # ── Bias section ──────────────────────────────────────────────────────────
 
@@ -476,20 +529,36 @@ class Sidebar(QFrame):
         gl.setSpacing(6)
 
         out = cfg.get("output", {})
+        import socket
+        host = socket.gethostname().split('.')[0].upper()
 
+        # NDI
         self._ndi_btn = QPushButton("NDI Output  OFF")
         self._ndi_btn.setCheckable(True)
         self._ndi_btn.setChecked(out.get("ndi_enabled", False))
         self._ndi_btn.setObjectName("ok")
         self._ndi_btn.toggled.connect(self._on_ndi_toggle)
         gl.addWidget(self._ndi_btn)
+        ndi_name = out.get("ndi_name", "ourT-YOLO")
+        self._ndi_hint = QLabel(f'OBS: find "{host} ({ndi_name})"')
+        self._ndi_hint.setStyleSheet(
+            f"color: {MUTED}; font-size: 9px; padding-left: 4px;"
+        )
+        gl.addWidget(self._ndi_hint)
 
+        # Syphon
         self._syphon_btn = QPushButton("Syphon Output  OFF")
         self._syphon_btn.setCheckable(True)
         self._syphon_btn.setChecked(out.get("syphon_enabled", False))
         self._syphon_btn.setObjectName("ok")
         self._syphon_btn.toggled.connect(self._on_syphon_toggle)
         gl.addWidget(self._syphon_btn)
+        syphon_name = out.get("syphon_name", "ourT-YOLO")
+        self._syphon_hint = QLabel(f'Syphon server: "{syphon_name}"')
+        self._syphon_hint.setStyleSheet(
+            f"color: {MUTED}; font-size: 9px; padding-left: 4px;"
+        )
+        gl.addWidget(self._syphon_hint)
 
         self._vbox.addWidget(g)
 
@@ -500,6 +569,18 @@ class Sidebar(QFrame):
     def _on_syphon_toggle(self, checked: bool) -> None:
         self._syphon_btn.setText(f"Syphon Output  {'ON' if checked else 'OFF'}")
         self.config_changed.emit({"output": {"syphon_enabled": checked}})
+
+    def update_output_state(self, ndi_on: bool, syphon_on: bool) -> None:
+        """Sync button visual state when the pipeline silently disables an output."""
+        for btn, on, label in (
+            (self._ndi_btn,    ndi_on,    "NDI Output"),
+            (self._syphon_btn, syphon_on, "Syphon Output"),
+        ):
+            if btn.isChecked() != on:
+                btn.blockSignals(True)
+                btn.setChecked(on)
+                btn.setText(f"{label}  {'ON' if on else 'OFF'}")
+                btn.blockSignals(False)
 
     # ── Detection list section ────────────────────────────────────────────────
 
@@ -563,6 +644,7 @@ class MainWindow(QMainWindow):
         self._sidebar = Sidebar(cfg, cameras)
         self._sidebar.config_changed.connect(self._on_config_change)
         self._sidebar.camera_changed.connect(self._on_camera_change)
+        self._sidebar.device_changed.connect(self._on_device_change)
         root_h.addWidget(self._sidebar)
 
         # ── Start pipeline ────────────────────────────────────────────────────
@@ -590,6 +672,12 @@ class MainWindow(QMainWindow):
         self._cfg = new_cfg
         self._start_pipeline(new_cfg)
         log.info(f"[app] Camera changed to index {cam_index}")
+
+    def _on_device_change(self, device: str) -> None:
+        """Restart pipeline with the selected compute device."""
+        self._cfg = {**self._cfg, "yolo": {**self._cfg.get("yolo", {}), "device": device}}
+        self._start_pipeline(self._cfg)
+        log.info(f"[app] Compute device → {device or 'auto'}")
 
     def _on_config_change(self, patch: dict) -> None:
         if self._pipeline:
@@ -625,6 +713,12 @@ class MainWindow(QMainWindow):
                 f"background: {PANEL}; border-top: 1px solid {BORDER};"
                 f"color: {MUTED}; font-size: 10px; padding: 4px 12px; letter-spacing: 1px;"
             )
+        # Keep NDI/Syphon buttons in sync with actual pipeline state
+        out = snap.output_cfg
+        self._sidebar.update_output_state(
+            ndi_on=out.get("ndi_enabled", False),
+            syphon_on=out.get("syphon_enabled", False),
+        )
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
@@ -640,8 +734,9 @@ class MainWindow(QMainWindow):
         import yaml as _yaml
         server_cfg = {}
         try:
-            with open(Path(__file__).parent / "config.yaml") as f:
-                server_cfg = _yaml.safe_load(f).get("server", {})
+            server_cfg = _yaml.safe_load(
+                open(RESOURCE_DIR / "config.yaml", encoding='utf-8')
+            ).get("server", {})
         except Exception:
             pass
 
