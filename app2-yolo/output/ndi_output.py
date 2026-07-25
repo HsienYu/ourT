@@ -3,10 +3,14 @@ ndi_output.py
 
 Send annotated frames as an NDI video stream.
 Requires: pip install ndi-python  AND  NDI SDK from ndi.video
+
+In OBS: Add Source → NDI Source → look for "HOSTNAME (ourT-YOLO)"
+where HOSTNAME is this machine's NDI hostname (shown in log on start).
 """
 
 from __future__ import annotations
 import logging
+import socket
 from typing import Optional
 
 import numpy as np
@@ -27,7 +31,7 @@ class NDIOutput:
             raise RuntimeError(
                 "ndi-python not installed.\n"
                 "Run: pip install ndi-python\n"
-                "Install NDI SDK from https://ndi.video/for-developers/ndi-sdk/"
+                "NDI SDK from https://ndi.video/for-developers/ndi-sdk/"
             )
 
         if not ndi.initialize():
@@ -37,16 +41,21 @@ class NDIOutput:
         send_desc.ndi_name = self._name
         self._sender = ndi.send_create(send_desc)
         if self._sender is None:
+            ndi.destroy()
             raise RuntimeError("Cannot create NDI sender")
 
         self._ndi = ndi
-        log.info(f"[ndi-out] Sending as '{self._name}'")
+        host = socket.gethostname().split('.')[0].upper()
+        log.info(
+            f"[ndi-out] Sending as '{self._name}' — "
+            f"look for \"{host} ({self._name})\" in OBS NDI Source"
+        )
 
     def send(self, frame_bgr: np.ndarray) -> None:
         if self._sender is None or self._ndi is None:
             return
-        # NDI expects BGRX (4 channels)
         import cv2
+        # NDI expects BGRX (4 channels)
         bgrx = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2BGRA)
         h, w = bgrx.shape[:2]
 
@@ -62,4 +71,7 @@ class NDIOutput:
     def stop(self) -> None:
         if self._sender and self._ndi:
             self._ndi.send_destroy(self._sender)
+            self._ndi.destroy()
+        self._sender = None
+        self._ndi = None
         log.info("[ndi-out] Stopped")

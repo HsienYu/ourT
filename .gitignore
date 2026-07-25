@@ -16,6 +16,8 @@ songs/covers/
 
 # Python
 app2-yolo/venv/
+app2-yolo/build/
+app2-yolo/dist/
 # Large model/task binary files — download separately
 app2-yolo/*.pt
 app2-yolo/*.task

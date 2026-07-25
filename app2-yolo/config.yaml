@@ -9,7 +9,7 @@ camera:
   fps_target: 30
 
 yolo:
-  model: yolov8n.pt       # yolov8n (fast) | yolov8s | yolov8m (accurate)
+  model: yolo26n.pt       # yolo26n (fast) | yolo26s | yolo26m (accurate)
   confidence: 0.45
   device: ""              # "" = auto (MPS on Apple Silicon, CUDA if available, else CPU)
 

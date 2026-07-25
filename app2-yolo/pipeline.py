@@ -63,6 +63,7 @@ class PipelineSnapshot:
     heuristics_cfg: dict
     labels_cfg: dict
     colors_cfg: dict
+    output_cfg: dict
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -140,6 +141,7 @@ class Pipeline:
                 heuristics_cfg=dict(self._heuristics_cfg),
                 labels_cfg=dict(self._labels_cfg),
                 colors_cfg=dict(self._colors_cfg),
+                output_cfg=dict(self._output_cfg),
             )
 
     # ── Camera source list (for GUI selector) ─────────────────────────────────

@@ -35,7 +35,7 @@ from mediapipe.tasks.python.vision import PoseLandmarkerOptions, RunningMode
 log = logging.getLogger(__name__)
 
 # Path to the .task model file — sits next to this package's parent dir
-_MODEL_PATH = str(Path(__file__).parent.parent / "pose_landmarker_lite.task")
+_MODEL_PATH = str(Path.cwd() / "pose_landmarker_lite.task")
 _MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
     "pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
