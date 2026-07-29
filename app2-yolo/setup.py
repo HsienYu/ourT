@@ -11,27 +11,12 @@ Output: dist/ourT YOLO.app
 """
 
 import sys
-sys.setrecursionlimit(5000)   # modulegraph hits default 1000 on torch's deep AST
 
-# Patch macholib: libmediapipe.dylib's LC_ID_DYLIB install name is
-# "@rpath/libmediapipe_source.so" (30 chars).  macholib rewrites it to the
-# full bundle path (~82 chars), expanding the header by exactly 56 bytes —
-# but the file has zero header slack (code starts at byte 4880).
-# Root cause: the dylib's own install name is a vestigial source-build artifact.
-# Fix: skip rewriteLoadCommands entirely for libmediapipe.dylib so the file is
-# left as-is in the bundle.  At runtime dyld loads it via its original rpath;
-# mediapipe Tasks API works without libmediapipe_source.so.
-from macholib.MachO import MachOHeader as _MachOHeader
-def _patch_macho():
-    _orig = _MachOHeader.rewriteLoadCommands
-    def _safe(self, changefunc):
-        if 'libmediapipe.dylib' in str(self.parent.filename):
-            return False   # leave file unchanged — no header room for rewrite
-        return _orig(self, changefunc)
-    _MachOHeader.rewriteLoadCommands = _safe
-_patch_macho()
-del _patch_macho, _MachOHeader
 from setuptools import setup
+
+
+# modulegraph exceeds Python's default recursion limit while scanning PyTorch.
+sys.setrecursionlimit(5000)
 
 APP     = ['app.py']
 NAME    = 'ourT YOLO'
@@ -41,7 +26,6 @@ VERSION = '1.0.0'
 DATA_FILES = [
     ('', [
         'config.yaml',
-        'pose_landmarker_lite.task',
         'yolo26n.pt',
         'LICENSE',
     ]),
@@ -62,7 +46,6 @@ OPTIONS = {
     'packages': [
         # Core detection stack
         'ultralytics',
-        'mediapipe',
         'cv2',
         'PIL',
         'torch',

@@ -857,3 +857,40 @@ Web Audio playback requires a live provider and physical output device.
 - [done] Run 62 unit tests, Control syntax checks, arm64/x64 DMG builds, and bundled-resource secret scans
 - [done] Live operator verification: AI speech continuity issue reported resolved after the no-auto-discard, jitter-buffer, and echo-protection changes
 - [todo] Manual verification: interrupt/reconnect flushing remains to be exercised explicitly
+
+## Phase 18 — YOLO Stable Random Labels [active]
+
+Workflow: Hybrid verification — stable per-track label assignment is covered by
+an isolated Python unit test; annotation rendering and camera tracking require
+the App 2 manual camera protocol.
+
+- [done] Add a configurable YAML label pool
+- [done] Assign one label per YOLO track ID and retain it for the track lifetime
+- [done] Surface the label in annotated video, REST output, web panel, and Qt sidebar
+- [done] Verify the pure cache behavior, Python syntax, and YAML configuration
+- [done] Manual camera verification: user confirmed each visible track keeps its label until it leaves the frame
+
+## Phase 19 — YOLO Label-Only Display [active]
+
+Workflow: Hybrid verification — the YAML-backed per-track assignment is pure
+logic covered by TDD; camera tracking and the GUI/web/NDI presentation require
+the App 2 manual camera protocol.
+
+- [done] Add failing tests for a cleaned YAML label pool and stable per-track assignment
+- [done] Replace gender and social-attribute inference with one YAML label per tracked person
+- [done] Remove MediaPipe pose dependencies and obsolete bundle resources
+- [done] Show only `標籤` in annotation, REST output, web panel, and Qt sidebar
+- [done] Update documentation and manual verification protocol
+- [done] Run automated checks: unit tests, YAML validation, syntax compilation, diff validation, and stale-reference scan
+- [done] Manual camera verification: user confirmed label-only annotation, per-track label stability, and GUI/web display
+- [todo] Manual NDI verification: confirm the label-only annotation reaches an NDI receiver when the NDI SDK is installed
+
+## Phase 20 — YOLO App Bundle [active]
+
+Workflow: Deployment — build the existing py2app configuration with the project
+virtual environment and inspect the resulting application bundle.
+
+- [done] Build `dist/ourT YOLO.app` with py2app
+- [done] Inspect bundle metadata and required resources
+- [done] Manually launch the bundle and verify camera and GUI: user confirmed the app is working
+- [todo] Manually verify NDI output when the NDI SDK and a receiver are available

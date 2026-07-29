@@ -1,13 +1,13 @@
 """
 pipeline.py
 
-Shared detection pipeline.  Runs in a background thread.
+Shared detection pipeline. Runs in a background thread.
 Used by both:
   - app.py   (PyQt6 standalone GUI)
   - main.py  (FastAPI web server)
 
-The pipeline reads frames from a CameraSource, runs YOLOv8 + MediaPipe Pose,
-scores gender expression with GenderHeuristics, annotates the frame, and
+The pipeline reads frames from a CameraSource, runs YOLO person tracking,
+assigns one stable YAML label to each track, annotates the frame, and
 optionally sends to NDI / Syphon outputs.
 
 All mutable state is protected by a threading.Lock.
@@ -20,17 +20,16 @@ import logging
 import os
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Callable, List, Optional
 
 import cv2
 import numpy as np
-import yaml
 from PIL import Image, ImageDraw, ImageFont
 
 from processors.camera_source import CameraSource
 from processors.yolo_detector import YoloDetector
-from processors.gender_heuristics import GenderHeuristics, GenderScore
+from processors.label_assigner import LabelAssigner
 
 log = logging.getLogger(__name__)
 
@@ -41,16 +40,7 @@ log = logging.getLogger(__name__)
 class DetectionResult:
     track_id: Optional[int]
     bbox: tuple           # x1, y1, x2, y2
-    score: float
-    raw_score: float
     label: str
-    shoulder_hip_ratio: Optional[float]
-    height: str
-    clothing_colour: str
-    image_light: str
-    skin_tone: str
-    posture: str
-    role_projection: str
 
 
 @dataclass
@@ -60,9 +50,6 @@ class PipelineSnapshot:
     error: Optional[str]
     detections: List[DetectionResult]
     frame: Optional[np.ndarray]      # latest annotated BGR frame (may be None)
-    heuristics_cfg: dict
-    labels_cfg: dict
-    colors_cfg: dict
     output_cfg: dict
 
 
@@ -78,10 +65,8 @@ class Pipeline:
         self._cfg = cfg
         self._lock = threading.Lock()
 
-        # Mutable runtime config (operator can update live)
-        self._heuristics_cfg: dict = dict(cfg.get("heuristics", {}))
-        self._labels_cfg: dict     = dict(cfg.get("labels", {}))
-        self._colors_cfg: dict     = dict(cfg.get("colors", {}))
+        # Labels come from the YAML configuration; output can update live.
+        self._labels_cfg: list = list(cfg.get("labels", []))
         self._output_cfg: dict     = dict(cfg.get("output", {}))
 
         # Runtime state
@@ -116,16 +101,10 @@ class Pipeline:
 
     def update_config(self, patch: dict) -> None:
         """
-        Live-update heuristics / labels / colors / output config.
-        patch keys: 'heuristics', 'labels', 'colors', 'output'
+        Live-update output config.
+        patch keys: 'output'
         """
         with self._lock:
-            if "heuristics" in patch:
-                self._heuristics_cfg.update(patch["heuristics"])
-            if "labels" in patch:
-                self._labels_cfg.update(patch["labels"])
-            if "colors"  in patch:
-                self._colors_cfg.update(patch["colors"])
             if "output"  in patch:
                 self._output_cfg.update(patch["output"])
                 # NDI / Syphon on-off handled inside loop via flags
@@ -138,9 +117,6 @@ class Pipeline:
                 error=self._error,
                 detections=list(self._detections),
                 frame=self._latest_frame.copy() if self._latest_frame is not None else None,
-                heuristics_cfg=dict(self._heuristics_cfg),
-                labels_cfg=dict(self._labels_cfg),
-                colors_cfg=dict(self._colors_cfg),
                 output_cfg=dict(self._output_cfg),
             )
 
@@ -187,10 +163,7 @@ class Pipeline:
             )
 
             frame_times: List[float] = []
-            heuristics = GenderHeuristics({
-                **self._heuristics_cfg,
-                "labels": self._labels_cfg,
-            })
+            assigner = LabelAssigner(self._labels_cfg)
 
             while self._running:
                 t0 = time.time()
@@ -199,41 +172,27 @@ class Pipeline:
                     time.sleep(0.02)
                     continue
 
-                # Snapshot current config (operator may update between frames)
+                # Snapshot current output config (operator may update between frames)
                 with self._lock:
-                    h_cfg = {**self._heuristics_cfg, "labels": self._labels_cfg}
-                    c_cfg = dict(self._colors_cfg)
                     out_cfg = dict(self._output_cfg)
 
                 # Start or stop VJ outputs immediately when the GUI toggles them.
                 ndi_out = self._sync_ndi_output(ndi_out, out_cfg)
                 syph_out = self._sync_syphon_output(syph_out, out_cfg)
 
-                heuristics.update_config(h_cfg)
                 persons    = detector.detect(raw)
 
                 annotated = raw.copy()
                 results: List[DetectionResult] = []
 
                 for p in persons:
-                    score: GenderScore = heuristics.score(p)
-                    color = _label_color(score.label, c_cfg)
-                    social = heuristics.social_labels(p, raw.shape[0])
-                    _draw_person(annotated, p.bbox, score, social, color)
+                    label = assigner.assign(p.track_id)
+                    _draw_person(annotated, p.bbox, label)
 
                     results.append(DetectionResult(
                         track_id=p.track_id,
                         bbox=p.bbox,
-                        score=score.final,
-                        raw_score=score.raw,
-                        label=score.label,
-                        shoulder_hip_ratio=score.shoulder_hip_ratio,
-                        height=social["height"],
-                        clothing_colour=social["clothing_colour"],
-                        image_light=social["image_light"],
-                        skin_tone=social["skin_tone"],
-                        posture=social["posture"],
-                        role_projection=social["role_projection"],
+                        label=label,
                     ))
 
                 # FPS overlay
@@ -315,10 +274,7 @@ class Pipeline:
 
 # ── Drawing helpers ───────────────────────────────────────────────────────────
 
-def _label_color(label: str, colors_cfg: dict) -> tuple:
-    key = {"男性化": "masc", "女性化": "fem", "中性": "neutral", "不確定性": "fluid"}.get(label, "neutral")
-    bgr = colors_cfg.get(key, [180, 180, 180])
-    return tuple(int(v) for v in bgr)
+_LABEL_COLOR = (180, 255, 180)
 
 
 _FONT_PATHS = [
@@ -337,19 +293,14 @@ def _chinese_font(size: int) -> ImageFont.FreeTypeFont:
 def _draw_person(
     frame: np.ndarray,
     bbox: tuple,
-    score: GenderScore,
-    social: Dict[str, str],
-    color: tuple,
+    label: str,
 ) -> None:
     x1, y1, x2, y2 = bbox
-    label_lines = [
-        f"{score.label}  {score.final:.0f}",
-        f"高:{social['height']}  服裝:{social['clothing_colour']}  姿態:{social['posture']}",
-        f"職業投射:{social['role_projection']}",
-        f"膚色:{social['skin_tone']}  光線:{social['image_light']}",
-    ]
+    label_lines = [f"標籤: {label}"] if label else []
 
-    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), _LABEL_COLOR, 2)
+    if not label_lines:
+        return
 
     # OpenCV cannot render zh-TW text. Use a macOS CJK font through Pillow.
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -359,14 +310,7 @@ def _draw_person(
     line_height = 20
     widths = [draw.textbbox((0, 0), line, font=font)[2] for line in label_lines]
     top = max(0, y1 - line_height * len(label_lines) - 6)
-    draw.rectangle((x1, top, x1 + max(widths) + 10, y1), fill=(color[2], color[1], color[0]))
+    draw.rectangle((x1, top, x1 + max(widths) + 10, y1), fill=(_LABEL_COLOR[2], _LABEL_COLOR[1], _LABEL_COLOR[0]))
     for i, line in enumerate(label_lines):
         draw.text((x1 + 4, top + 2 + i * line_height), line, font=font, fill=(20, 20, 20))
     frame[:] = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-
-
-def _height_label(bbox_h: int, frame_h: int) -> str:
-    r = bbox_h / frame_h
-    if r > 0.7:  return "高"
-    if r > 0.45: return "中"
-    return "矮"

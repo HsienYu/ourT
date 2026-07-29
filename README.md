@@ -190,21 +190,14 @@ python main.py
 
 ### Labels shown on each detected person
 
-- Gender expression: 男性化 / 女性化 / 中性 / 不確定性 + score 0–100
-- 高/中/矮 (height from bounding box ratio)
-- Clothing colour
-- Posture: 直立 / 收縮
-- 職業投射 (artistic social projection, stable per track ID)
-- 膚色: 不判定 (intentionally not inferred)
-- Image light: 暖光 / 冷光 / 中性光 etc.
+Each tracked person receives one `標籤` from the `labels` list in
+`app2-yolo/config.yaml` for the duration of that track. The list includes the
+former occupation-projection terms. No gender, height, pose, skin tone,
+clothing colour, or lighting inference is performed or displayed.
 
 ### Operator controls (`/panel` or GUI sidebar)
 
-- **Bias slider** (−50 to +50): push all labels toward masculine or feminine
-- **震盪模式**: bias drifts sinusoidally — labels shift over time
-- **隨機擾動**: per-person random jitter
-- **Custom labels**: rename 男性化/女性化/中性/不確定性 live
-- **NDI / Syphon toggles**: send annotated feed to VJ software
+- **NDI / Syphon toggles**: send the annotated feed to VJ software
 
 ### NDI/Syphon output to VJ software
 
@@ -366,12 +359,12 @@ ourT/
     app.py                      # PyQt6 standalone GUI (+ embedded FastAPI)
     main.py                     # Headless FastAPI web server
     pipeline.py                 # Shared detection pipeline
-    config.yaml                 # Camera, YOLO, heuristics, labels, output config
+    config.yaml                 # Camera, YOLO, YAML labels, output config
     setup.py                    # py2app bundle config
     processors/
       camera_source.py          # Webcam / NDI / Syphon input
-      yolo_detector.py          # YOLOv8 + MediaPipe Pose
-      gender_heuristics.py      # Visual/social label heuristics
+      yolo_detector.py          # YOLO person tracking
+      label_assigner.py         # Stable YAML label assignment
     output/
       ndi_output.py             # NDI video send
       syphon_output.py          # Syphon video send (macOS)

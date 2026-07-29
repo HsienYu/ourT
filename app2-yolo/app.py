@@ -12,9 +12,8 @@ Layout:
   ├──────────────────────────┬──────────────────────────┤
   │                          │  CONTROLS                │
   │   live camera feed       │  Camera selector         │
-  │   (annotated, fills      │  Bias slider             │
-  │    left panel)           │  Oscillation / Randomize │
-  │                          │  Custom labels           │
+   │   (annotated, fills      │  Output toggles          │
+   │    left panel)           │                          │
   │                          │  NDI / Syphon toggles    │
   │                          │  Detection list          │
   └──────────────────────────┴──────────────────────────┘
@@ -50,16 +49,16 @@ import numpy as np
 import yaml
 
 from PyQt6.QtCore import (
-    Qt, QTimer, QThread, pyqtSignal, QObject, QSize,
+    Qt, QTimer, pyqtSignal, QObject,
 )
 from PyQt6.QtGui import (
-    QImage, QPixmap, QFont, QColor, QPalette, QIcon,
+    QImage, QPixmap, QColor, QPalette,
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
-    QSlider, QPushButton, QCheckBox, QLineEdit,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
-    QFrame, QComboBox, QSizePolicy, QSplitter,
+    QPushButton,
+    QVBoxLayout, QHBoxLayout, QScrollArea,
+    QFrame, QComboBox, QSizePolicy,
     QGroupBox,
 )
 
@@ -88,16 +87,8 @@ BORDER   = "#222222"
 TEXT     = "#dddddd"
 MUTED    = "#555555"
 ACCENT   = "#e0d0ff"
-ACCENT2  = "#ffd0e0"
 OK       = "#44ffaa"
-WARN     = "#ffcc44"
 DANGER   = "#ff6080"
-MASC     = "#6080ff"
-FEM      = "#ff6080"
-NEUTRAL  = "#80ff80"
-FLUID    = "#ffdc64"
-
-LABEL_COLORS = {"男性化": MASC, "女性化": FEM, "中性": NEUTRAL, "不確定性": FLUID}
 
 STYLE = f"""
 QWidget {{
@@ -127,20 +118,6 @@ QLabel#statusBar {{
     padding: 4px 12px;
     letter-spacing: 1px;
 }}
-QSlider::groove:horizontal {{
-    height: 2px;
-    background: {BORDER};
-}}
-QSlider::handle:horizontal {{
-    background: {ACCENT};
-    width: 14px;
-    height: 14px;
-    margin: -6px 0;
-    border-radius: 7px;
-}}
-QSlider::sub-page:horizontal {{
-    background: {ACCENT};
-}}
 QPushButton {{
     background: transparent;
     border: 1px solid {BORDER};
@@ -153,17 +130,7 @@ QPushButton {{
 }}
 QPushButton:hover  {{ border-color: #444; color: {TEXT}; }}
 QPushButton:checked {{ border-color: {ACCENT}; color: {ACCENT}; background: rgba(224,208,255,0.07); }}
-QPushButton#warn:checked {{ border-color: {WARN};   color: {WARN};   background: rgba(255,204,68,0.07); }}
 QPushButton#ok:checked   {{ border-color: {OK};     color: {OK};     background: rgba(68,255,170,0.07); }}
-QLineEdit {{
-    background: #000;
-    border: 1px solid {BORDER};
-    color: {TEXT};
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
-    padding: 4px 8px;
-}}
-QLineEdit:focus {{ border-color: #444; }}
 QComboBox {{
     background: #000;
     border: 1px solid {BORDER};
@@ -278,35 +245,9 @@ class DetectionListWidget(QWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(6, 3, 6, 3)
 
-            id_lbl = QLabel(f"#{d.track_id or '?'}")
-            id_lbl.setStyleSheet(f"color: {MUTED}; font-size: 10px; border: none;")
-
-            score_lbl = QLabel(f"{d.score:.0f}")
-            score_lbl.setStyleSheet(f"color: {TEXT}; font-size: 11px; border: none;")
-
-            tag_color = LABEL_COLORS.get(d.label, MUTED)
-            tag = QLabel(d.label)
-            tag.setStyleSheet(
-                f"color: {tag_color}; border: 1px solid {tag_color};"
-                f"padding: 1px 6px; font-size: 10px;"
-            )
-
-            meta = QLabel(
-                f"高:{d.height}  服裝:{d.clothing_colour}  姿態:{d.posture}\n"
-                f"職業投射:{d.role_projection}  膚色:{d.skin_tone}  光線:{d.image_light}"
-            )
-            meta.setStyleSheet(f"color: {MUTED}; font-size: 9px; border: none;")
-
-            details = QVBoxLayout()
-            details.setSpacing(1)
-            top = QHBoxLayout()
-            top.addWidget(id_lbl)
-            top.addWidget(score_lbl)
-            top.addStretch()
-            top.addWidget(tag)
-            details.addLayout(top)
-            details.addWidget(meta)
-            rl.addLayout(details)
+            label = QLabel(f"標籤:{d.label}")
+            label.setStyleSheet(f"color: {ACCENT}; font-size: 11px; border: none;")
+            rl.addWidget(label)
             self._layout.addWidget(row)
 
         self._layout.addStretch()
@@ -363,9 +304,6 @@ class Sidebar(QFrame):
 
         self._build_camera_section(cameras)
         self._build_device_section(cfg)
-        self._build_bias_section(cfg)
-        self._build_mode_section()
-        self._build_labels_section(cfg)
         self._build_output_section(cfg)
         self._build_detections_section()
 
@@ -418,108 +356,6 @@ class Sidebar(QFrame):
         device = self._device_combo.currentData()
         if device is not None:
             self.device_changed.emit(device)
-
-    # ── Bias section ──────────────────────────────────────────────────────────
-
-    def _build_bias_section(self, cfg: dict) -> None:
-        g = QGroupBox("CLASSIFICATION BIAS / 標籤偏移")
-        gl = QVBoxLayout(g)
-        gl.setSpacing(6)
-
-        # Axis labels
-        axis_row = QHBoxLayout()
-        l_masc = QLabel("← 男性化")
-        l_masc.setStyleSheet(f"color: {MASC}; font-size: 10px;")
-        l_mid  = QLabel("中性")
-        l_mid.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        l_mid.setStyleSheet(f"color: {MUTED}; font-size: 10px;")
-        l_fem  = QLabel("女性化 →")
-        l_fem.setAlignment(Qt.AlignmentFlag.AlignRight)
-        l_fem.setStyleSheet(f"color: {FEM}; font-size: 10px;")
-        axis_row.addWidget(l_masc)
-        axis_row.addWidget(l_mid)
-        axis_row.addWidget(l_fem)
-        gl.addLayout(axis_row)
-
-        bias_row = QHBoxLayout()
-        self._bias_slider = QSlider(Qt.Orientation.Horizontal)
-        self._bias_slider.setRange(-50, 50)
-        self._bias_slider.setValue(cfg.get("heuristics", {}).get("bias", 0))
-        self._bias_slider.setTickInterval(10)
-        self._bias_val = QLabel(f"{self._bias_slider.value():+d}")
-        self._bias_val.setStyleSheet(f"color: {ACCENT}; font-size: 11px; min-width: 32px;")
-        self._bias_val.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._bias_slider.valueChanged.connect(self._on_bias_change)
-        bias_row.addWidget(self._bias_slider)
-        bias_row.addWidget(self._bias_val)
-        gl.addLayout(bias_row)
-
-        self._vbox.addWidget(g)
-
-    def _on_bias_change(self, val: int) -> None:
-        self._bias_val.setText(f"{val:+d}")
-        self.config_changed.emit({"heuristics": {"bias": val}})
-
-    # ── Oscillation / Randomize section ──────────────────────────────────────
-
-    def _build_mode_section(self) -> None:
-        g = QGroupBox("INSTABILITY MODE / 不穩定模式")
-        gl = QVBoxLayout(g)
-        gl.setSpacing(6)
-
-        self._osc_btn = QPushButton("震盪模式  OFF")
-        self._osc_btn.setCheckable(True)
-        self._osc_btn.setObjectName("warn")
-        self._osc_btn.toggled.connect(self._on_osc_toggle)
-        gl.addWidget(self._osc_btn)
-
-        self._rand_btn = QPushButton("隨機擾動  OFF")
-        self._rand_btn.setCheckable(True)
-        self._rand_btn.setObjectName("warn")
-        self._rand_btn.toggled.connect(self._on_rand_toggle)
-        gl.addWidget(self._rand_btn)
-
-        self._vbox.addWidget(g)
-
-    def _on_osc_toggle(self, checked: bool) -> None:
-        self._osc_btn.setText(f"震盪模式  {'ON' if checked else 'OFF'}")
-        self.config_changed.emit({"heuristics": {"oscillation": checked}})
-
-    def _on_rand_toggle(self, checked: bool) -> None:
-        self._rand_btn.setText(f"隨機擾動  {'ON' if checked else 'OFF'}")
-        self.config_changed.emit({"heuristics": {"randomize": checked}})
-
-    # ── Custom labels section ─────────────────────────────────────────────────
-
-    def _build_labels_section(self, cfg: dict) -> None:
-        g = QGroupBox("LABELS / 標籤文字")
-        gl = QGridLayout(g)
-        gl.setSpacing(6)
-
-        labels = cfg.get("labels", {})
-        self._label_inputs: dict[str, QLineEdit] = {}
-
-        pairs = [
-            ("masc",    "男性化", MASC),
-            ("fem",     "女性化", FEM),
-            ("neutral", "中性",   NEUTRAL),
-            ("fluid",   "不確定性", FLUID),
-        ]
-
-        for row, (key, default, color) in enumerate(pairs):
-            lbl = QLabel(default)
-            lbl.setStyleSheet(f"color: {color}; font-size: 10px;")
-            inp = QLineEdit(labels.get(key, default))
-            inp.setStyleSheet(inp.styleSheet() + f" border-color: {color};")
-            inp.textChanged.connect(lambda text, k=key: self._on_label_change(k, text))
-            self._label_inputs[key] = inp
-            gl.addWidget(lbl, row, 0)
-            gl.addWidget(inp, row, 1)
-
-        self._vbox.addWidget(g)
-
-    def _on_label_change(self, key: str, text: str) -> None:
-        self.config_changed.emit({"labels": {key: text}})
 
     # ── Output section (NDI / Syphon) ─────────────────────────────────────────
 
@@ -704,10 +540,7 @@ class MainWindow(QMainWindow):
         else:
             n = len(snap.detections)
             self._status.setText(
-                f"fps: {snap.fps:.0f}    偵測: {n} 人    "
-                f"bias: {snap.heuristics_cfg.get('bias', 0):+d}    "
-                f"{'震盪 ON  ' if snap.heuristics_cfg.get('oscillation') else ''}"
-                f"{'隨機 ON' if snap.heuristics_cfg.get('randomize') else ''}"
+                f"fps: {snap.fps:.0f}    偵測: {n} 人"
             )
             self._status.setStyleSheet(
                 f"background: {PANEL}; border-top: 1px solid {BORDER};"

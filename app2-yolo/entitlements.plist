@@ -12,7 +12,7 @@
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
 
-    <!-- py2app bundles include unsigned third-party dylibs (mediapipe, torch, cv2, NDI) -->
+    <!-- py2app bundles include unsigned third-party dylibs (torch, cv2, NDI) -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
 </dict>
