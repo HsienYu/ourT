@@ -883,7 +883,7 @@ the App 2 manual camera protocol.
 - [done] Update documentation and manual verification protocol
 - [done] Run automated checks: unit tests, YAML validation, syntax compilation, diff validation, and stale-reference scan
 - [done] Manual camera verification: user confirmed label-only annotation, per-track label stability, and GUI/web display
-- [todo] Manual NDI verification: confirm the label-only annotation reaches an NDI receiver when the NDI SDK is installed
+- [done] Manual NDI verification: user confirmed the label-only annotation reaches an NDI receiver
 
 ## Phase 20 — YOLO App Bundle [active]
 
@@ -893,4 +893,4 @@ virtual environment and inspect the resulting application bundle.
 - [done] Build `dist/ourT YOLO.app` with py2app
 - [done] Inspect bundle metadata and required resources
 - [done] Manually launch the bundle and verify camera and GUI: user confirmed the app is working
-- [todo] Manually verify NDI output when the NDI SDK and a receiver are available
+- [done] Manually verify NDI output: user confirmed the NDI stream is working
